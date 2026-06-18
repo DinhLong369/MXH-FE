@@ -44,8 +44,8 @@ function launch() {
         <div v-for="bot in bots" :key="bot.id" class="flex items-center gap-3">
           <img :src="bot.avatar" :alt="bot.name" class="h-10 w-10 rounded-full object-cover ring-2 ring-slate-800" referrerpolicy="no-referrer">
           <div class="flex-1 overflow-hidden">
-            <p class="text-xs font-bold text-slate-100 truncate">{{ bot.name }}</p>
-            <p class="text-[10px] text-slate-500 truncate">{{ bot.followersCount.toLocaleString() }} người theo dõi</p>
+            <p class="text-sm font-bold text-slate-100 truncate">{{ bot.name }}</p>
+            <p class="text-[11px] text-slate-500 truncate">{{ bot.followersCount.toLocaleString() }} người theo dõi</p>
           </div>
           <button
             class="flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-[11px] font-bold transition"

@@ -79,7 +79,7 @@ function react(postId: string, type: ReactionType) {
       @click="store.openCreateModal()"
     >
       <img :src="currentUser.avatar" :alt="currentUser.name" class="h-10 w-10 rounded-full object-cover ring-2 ring-indigo-500/20" referrerpolicy="no-referrer">
-      <div class="flex-1 rounded-xl bg-slate-950/95 hover:bg-slate-950 px-4 py-2.5 text-xs text-slate-400 font-medium border border-slate-800 transition">
+      <div class="flex-1 rounded-xl bg-slate-950/95 hover:bg-slate-950 px-4 py-3 text-sm text-slate-400 font-medium border border-slate-800 transition">
         {{ currentUser.name }} ơi, bạn đang nghĩ gì thế? Chia sẻ ý kiến hay dùng AI soạn bài nhé...
       </div>
       <div class="flex h-10 w-10 items-center justify-center rounded-xl bg-indigo-600/20 text-indigo-400 border border-indigo-500/10">
@@ -117,7 +117,7 @@ function react(postId: string, type: ReactionType) {
               </div>
               <div>
                 <div class="flex items-center gap-1.5 flex-wrap">
-                  <h3 class="text-xs font-bold text-slate-100 hover:text-indigo-400 cursor-pointer">{{ post.authorName }}</h3>
+                  <h3 class="text-sm font-bold text-slate-100 hover:text-indigo-400 cursor-pointer">{{ post.authorName }}</h3>
                   <CheckCircle2 class="h-3.5 w-3.5 fill-indigo-500 text-slate-800" />
                   <span class="font-mono text-[9px] text-slate-500 font-medium">@{{ post.authorUsername }}</span>
                   <span v-if="post.userId !== currentUser.id" class="rounded bg-indigo-950/60 px-1.5 py-0.5 font-bold text-[8px] text-indigo-400 border border-indigo-500/25">AI Bot</span>
@@ -136,7 +136,7 @@ function react(postId: string, type: ReactionType) {
           </div>
 
           <!-- Content -->
-          <div class="text-sm text-slate-200 whitespace-pre-wrap leading-relaxed mb-4">{{ post.content }}</div>
+          <div class="text-[15px] text-slate-200 whitespace-pre-wrap leading-relaxed mb-4">{{ post.content }}</div>
 
           <!-- Tags -->
           <div v-if="post.tags.length" class="flex flex-wrap gap-1.5 mb-4">
@@ -225,7 +225,7 @@ function react(postId: string, type: ReactionType) {
                   <span class="text-xs font-bold text-slate-200">{{ c.authorName }}</span>
                   <span class="text-[9px] text-slate-500">{{ getRelativeTime(c.createdAt) }}</span>
                 </div>
-                <p class="text-xs text-slate-300 mt-0.5 leading-relaxed">{{ c.content }}</p>
+                <p class="text-[13px] text-slate-300 mt-0.5 leading-relaxed">{{ c.content }}</p>
               </div>
             </div>
 
