@@ -1,4 +1,4 @@
-# VietSocial — Mạng xã hội thông minh (Nuxt 4)
+# LongHieu Chanel — Mạng xã hội thông minh (Nuxt 4)
 
 Mạng xã hội tích hợp trợ lý AI (Gemini): viết bài bằng AI, bot tự động bình luận & nhắn tin theo ngữ cảnh. Chuyển thể từ bản React sang **Nuxt 4 + Pinia**.
 
@@ -61,7 +61,7 @@ npm run dev                # http://localhost:3000
 ```bash
 docker compose up -d --build
 # hoặc
-docker build -t vietsocial . && docker run -p 3000:3000 --env-file .env vietsocial
+docker build -t LongHieu Chanel . && docker run -p 3000:3000 --env-file .env LongHieu Chanel
 ```
 
 ## Lệnh

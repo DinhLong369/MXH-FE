@@ -1,6 +1,6 @@
 <script setup lang="ts">
 const store = useSocialStore()
-const { currentTab, isGlobalLoading, isCreateModalOpen } = storeToRefs(store)
+const { currentTab, isGlobalLoading, isCreateModalOpen, toast } = storeToRefs(store)
 
 // App dựa hoàn toàn vào localStorage → hydrate phía client
 onMounted(() => store.hydrate())
@@ -54,12 +54,25 @@ const showRightBar = computed(() =>
         <CreatePostModal v-if="isCreateModalOpen" />
       </AnimatePresence>
 
+      <!-- Toast -->
+      <AnimatePresence>
+        <Motion
+          v-if="toast"
+          :initial="{ opacity: 0, y: 20 }"
+          :animate="{ opacity: 1, y: 0 }"
+          :exit="{ opacity: 0, y: 20 }"
+          class="fixed bottom-24 md:bottom-8 left-1/2 -translate-x-1/2 z-50 rounded-2xl border border-slate-700 bg-slate-900/95 backdrop-blur px-4 py-2.5 text-xs font-semibold text-slate-100 shadow-2xl"
+        >
+          {{ toast }}
+        </Motion>
+      </AnimatePresence>
+
       <!-- SSR/loading fallback -->
       <template #fallback>
         <div class="flex min-h-screen items-center justify-center relative z-10">
           <div class="flex flex-col items-center gap-3 text-slate-400">
             <div class="h-10 w-10 rounded-xl bg-gradient-to-br from-indigo-500 to-violet-600 animate-pulse" />
-            <p class="text-sm font-semibold">Đang tải VietSocial...</p>
+            <p class="text-sm font-semibold">Đang tải LongHieu Chanel...</p>
           </div>
         </div>
       </template>

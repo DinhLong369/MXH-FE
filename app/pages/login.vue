@@ -2,8 +2,9 @@
 import { User, Lock, Eye, EyeOff, ArrowRight } from 'lucide-vue-next'
 
 const auth = useAuthStore()
-const username = ref('')
-const password = ref('')
+// Điền sẵn tài khoản demo để test nhanh
+const username = ref('hainam.dev')
+const password = ref('password123')
 const showPassword = ref(false)
 
 onMounted(() => {
@@ -50,13 +51,13 @@ async function submit() {
           </button>
         </div>
       </div>
-
+<!-- 
       <p class="text-[10px] text-indigo-400/80 leading-relaxed bg-indigo-950/20 p-2.5 rounded-xl border border-indigo-500/10 mt-1">
         💡 Tài khoản thử: <b>hainam.dev</b> (hoặc <b>hainam.dev@gmail.com</b>), mật khẩu <b>password123</b>
-      </p>
+      </p> -->
 
       <button type="submit" class="w-full flex items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-indigo-600 via-indigo-700 to-violet-600 py-3.5 px-4 font-bold text-white shadow-lg transition hover:opacity-95 active:scale-95 mt-1">
-        <span>Mở khoá Đăng nhập</span>
+        <span>Đăng nhập</span>
         <ArrowRight class="h-4.5 w-4.5" />
       </button>
 

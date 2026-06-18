@@ -5,7 +5,14 @@ const auth = useAuthStore()
 const { otpTimer } = storeToRefs(auth)
 
 const step = ref<'form' | 'otp'>('form')
-const form = reactive({ name: '', username: '', email: '', password: '', confirm: '' })
+// Điền sẵn dữ liệu fake để test nhanh
+const form = reactive({
+  name: 'Trần Văn A',
+  username: 'tranvana',
+  email: 'tranvana@gmail.com',
+  password: '123456',
+  confirm: '123456',
+})
 const otpCode = ref('')
 
 const timerText = computed(() => auth.formatTimer(otpTimer.value))
@@ -18,7 +25,8 @@ onMounted(() => {
 function submitForm() {
   const res = auth.validateRegister(form)
   if (res.ok) {
-    otpCode.value = ''
+    // Tự điền sẵn mã OTP vừa "gửi" để test nhanh
+    otpCode.value = auth.otpSentCode
     step.value = 'otp'
   }
 }
@@ -40,7 +48,7 @@ function backToForm() {
     <form v-if="step === 'form'" class="flex flex-col gap-3 py-1" @submit.prevent="submitForm">
       <div class="text-center mb-1">
         <h2 class="text-xl font-bold text-slate-100 mb-0.5">Khởi tạo tài khoản</h2>
-        <p class="text-xs text-slate-400">Tham gia ngay cùng VietSocial để trải nghiệm AI mượt mà nhất</p>
+        <p class="text-xs text-slate-400">Tham gia ngay cùng LongHieu Chanel để trải nghiệm AI mượt mà nhất</p>
       </div>
 
       <div class="flex flex-col gap-1 bg-slate-800/20 p-2.5 rounded-2xl border border-slate-800/40">

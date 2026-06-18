@@ -20,7 +20,7 @@ export default defineNuxtConfig({
     public: {
       // Exposed to the client
       apiBaseUrl: process.env.NUXT_PUBLIC_API_BASE_URL || 'http://localhost:8000/api',
-      appName: process.env.NUXT_PUBLIC_APP_NAME || 'VietSocial',
+      appName: process.env.NUXT_PUBLIC_APP_NAME || 'LongHieu Chanel',
     },
   },
 
@@ -33,7 +33,7 @@ export default defineNuxtConfig({
     head: {
       charset: 'utf-8',
       viewport: 'width=device-width, initial-scale=1',
-      title: 'VietSocial — Mạng xã hội thông minh',
+      title: 'LongHieu Chanel — Mạng xã hội thông minh',
     },
   },
 })

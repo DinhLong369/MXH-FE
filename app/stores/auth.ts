@@ -158,9 +158,9 @@ export const useAuthStore = defineStore('auth', {
 
       this.simulatedEmail = {
         show: true,
-        sender: 'security@vietsocial.vn',
+        sender: 'security@LongHieu Chanel.vn',
         title: subjectTitle,
-        content: `Chào bạn, VietSocial Security Team xin gửi mã xác minh OTP cho hành động ${typeDesc} của bạn. Vui lòng không chia sẻ mã này cho bất kỳ ai:\n\nMã xác minh OTP của bạn là: ${code}`,
+        content: `Chào bạn, LongHieu Chanel Security Team xin gửi mã xác minh OTP cho hành động ${typeDesc} của bạn. Vui lòng không chia sẻ mã này cho bất kỳ ai:\n\nMã xác minh OTP của bạn là: ${code}`,
         code,
       }
 
@@ -270,7 +270,7 @@ export const useAuthStore = defineStore('auth', {
       }
       // Hợp lệ → gửi mã kích hoạt
       this.showFeedback(`Thông tin hợp lệ! Đã gửi mã kích hoạt tới ${email}`, 'success')
-      this.triggerEmail('✨ Mã Kích Hoạt Đăng Ký Tài Khoản VietSocial', 'KÍCH HOẠT TÀI KHOẢN MỚI')
+      this.triggerEmail('✨ Mã Kích Hoạt Đăng Ký Tài Khoản LongHieu Chanel', 'KÍCH HOẠT TÀI KHOẢN MỚI')
       return { ok: true }
     },
 
@@ -289,7 +289,7 @@ export const useAuthStore = defineStore('auth', {
         username: form.username.trim().toLowerCase(),
         email: form.email.trim().toLowerCase(),
         passwordHash: form.password,
-        bio: 'Thành viên mới gia nhập cộng đồng VietSocial năng động. Cùng chia sẻ cảm hứng sáng tạo!',
+        bio: 'Thành viên mới gia nhập cộng đồng LongHieu Chanel năng động. Cùng chia sẻ cảm hứng sáng tạo!',
         avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=200&q=80',
         cover: 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&w=1000&q=80',
         followersCount: 0,
@@ -320,7 +320,7 @@ export const useAuthStore = defineStore('auth', {
       }
       this.identifiedUser = acct
       this.showFeedback(`Đã tìm thấy tài khoản! Gửi mã khôi phục qua ${acct.email}`, 'success')
-      this.triggerEmail('🔑 Khôi Phục Mật Khẩu VietSocial', 'KHÔI PHỤC MẬT KHẨU')
+      this.triggerEmail('🔑 Khôi Phục Mật Khẩu LongHieu Chanel', 'KHÔI PHỤC MẬT KHẨU')
       return { ok: true }
     },
 

@@ -28,7 +28,11 @@ function relTime(iso: string): string {
 }
 
 function openTarget(targetPostId?: string) {
-  if (targetPostId) store.setTab('home')
+  if (targetPostId) {
+    store.jumpToPost(targetPostId)
+  } else {
+    store.setTab('home')
+  }
 }
 </script>
 

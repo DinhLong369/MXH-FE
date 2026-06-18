@@ -1,5 +1,5 @@
 // ============================================================
-// Kiểu dữ liệu dùng chung cho toàn ứng dụng VietSocial
+// Kiểu dữ liệu dùng chung cho toàn ứng dụng LongHieu Chanel
 // ============================================================
 
 export type ReactionType = 'like' | 'love' | 'haha' | 'wow' | 'sad' | 'angry'
@@ -33,11 +33,14 @@ export interface UserProfile {
 export interface PostComment {
   id: string
   postId: string
+  authorId?: string
   authorName: string
   authorAvatar: string
   content: string
   createdAt: string
   likesCount: number
+  myReaction?: ReactionType
+  hidden?: boolean
   replies: PostComment[]
 }
 
@@ -67,6 +70,8 @@ export interface Message {
   sender: 'me' | 'them'
   text: string
   createdAt: string
+  reaction?: string
+  edited?: boolean
 }
 
 export interface Chat {

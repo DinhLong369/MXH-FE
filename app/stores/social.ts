@@ -42,6 +42,9 @@ interface SocialState {
   aiPreFillContent: string
   isGlobalLoading: boolean
   hydrated: boolean
+  viewingUserId: string | null
+  highlightPostId: string | null
+  toast: string | null
 }
 
 export const useSocialStore = defineStore('social', {
@@ -57,6 +60,9 @@ export const useSocialStore = defineStore('social', {
     aiPreFillContent: '',
     isGlobalLoading: false,
     hydrated: false,
+    viewingUserId: null,
+    highlightPostId: null,
+    toast: null,
   }),
 
   getters: {
@@ -65,6 +71,30 @@ export const useSocialStore = defineStore('social', {
     followedBots: (s) => s.bots.filter((b) => b.isFollowed),
     filteredPosts: (s) =>
       s.selectedTag ? s.posts.filter((p) => p.tags.includes(s.selectedTag!)) : s.posts,
+
+    // Hồ sơ đang xem (bản thân, bot, hoặc suy ra từ tác giả bài viết)
+    viewedUser(s): UserProfile {
+      if (!s.viewingUserId || s.viewingUserId === s.currentUser.id) return s.currentUser
+      const bot = s.bots.find((b) => b.id === s.viewingUserId)
+      if (bot) return bot
+      const p = s.posts.find((x) => x.userId === s.viewingUserId)
+      if (p) {
+        return {
+          id: p.userId,
+          name: p.authorName,
+          username: p.authorUsername,
+          avatar: p.authorAvatar,
+          cover:
+            'https://images.unsplash.com/photo-1519681393784-d120267933ba?auto=format&fit=crop&w=1200&q=80',
+          bio: 'Thành viên của LongHieu Chanel.',
+          followersCount: 0,
+          followingCount: 0,
+          postsCount: 0,
+        }
+      }
+      return s.currentUser
+    },
+    isViewingSelf: (s) => !s.viewingUserId || s.viewingUserId === s.currentUser.id,
   },
 
   actions: {
@@ -105,11 +135,11 @@ export const useSocialStore = defineStore('social', {
         const welcome: AppNotification = {
           id: 'sys-welcome',
           type: 'system',
-          senderName: 'Trợ lý Hệ thống VietSocial',
+          senderName: 'Trợ lý Hệ thống LongHieu Chanel',
           senderAvatar:
             'https://images.unsplash.com/photo-1544256718-3bcf237f3974?auto=format&fit=crop&w=150&q=80',
           message:
-            'Chào mừng bạn gia nhập VietSocial! Đây là mạng xã hội thông minh tích hợp Trợ lý Sáng tạo và các nhân vật tương tác tự động AI hàng đầu.',
+            'Chào mừng bạn gia nhập LongHieu Chanel! Đây là mạng xã hội thông minh tích hợp Trợ lý Sáng tạo và các nhân vật tương tác tự động AI hàng đầu.',
           read: false,
           createdAt: new Date().toISOString(),
         }
@@ -150,7 +180,7 @@ export const useSocialStore = defineStore('social', {
         } else {
           greetings = [
             'Xin chào Hải Nam! Rất vui được kết nối thiết kế.',
-            'Bố cục visual mượt mà của mạng xã hội VietSocial này thực sự truyền cảm hứng cho tôi. Cùng tôi tinh chỉnh các xu hướng typography tối giản nhé!',
+            'Bố cục visual mượt mà của mạng xã hội LongHieu Chanel này thực sự truyền cảm hứng cho tôi. Cùng tôi tinh chỉnh các xu hướng typography tối giản nhé!',
           ]
         }
 
@@ -198,9 +228,38 @@ export const useSocialStore = defineStore('social', {
     // ========================================================
     setTab(tab: string) {
       this.currentTab = tab
+      // Reset hồ sơ đang xem khi điều hướng (vào tab profile = xem bản thân)
+      this.viewingUserId = null
       // Vào messenger thì xóa badge chưa đọc
       if (tab === 'messenger') {
         this.saveChats(this.chats.map((c) => ({ ...c, unreadCount: 0 })))
+      }
+    },
+
+    // Xem hồ sơ của người khác (hoặc bản thân)
+    viewProfile(userId: string) {
+      this.viewingUserId = userId === this.currentUser.id ? null : userId
+      this.currentTab = 'profile'
+    },
+
+    // Bấm thông báo → nhảy tới bài viết
+    jumpToPost(postId: string) {
+      this.selectedTag = null
+      this.viewingUserId = null
+      this.currentTab = 'home'
+      this.highlightPostId = postId
+    },
+    clearHighlight() {
+      this.highlightPostId = null
+    },
+
+    // Toast ngắn
+    showToast(msg: string) {
+      this.toast = msg
+      if (import.meta.client) {
+        setTimeout(() => {
+          if (this.toast === msg) this.toast = null
+        }, 2500)
       }
     },
     setSelectedTag(tag: string | null) {
@@ -315,6 +374,7 @@ export const useSocialStore = defineStore('social', {
       const comment: PostComment = {
         id: `comment-reply-${Date.now()}`,
         postId,
+        authorId: bot.id,
         authorName: bot.name,
         authorAvatar: bot.avatar,
         content: text,
@@ -432,6 +492,7 @@ export const useSocialStore = defineStore('social', {
       const comment: PostComment = {
         id: `comment-${Date.now()}`,
         postId,
+        authorId: this.currentUser.id,
         authorName: this.currentUser.name,
         authorAvatar: this.currentUser.avatar,
         content: commentText,
@@ -445,6 +506,75 @@ export const useSocialStore = defineStore('social', {
           : p,
       )
       this.savePosts(updated)
+    },
+
+    // Cập nhật 1 bình luận (kể cả reply 1 cấp) trong 1 bài viết
+    updateCommentInPost(
+      postId: string,
+      commentId: string,
+      updater: (c: PostComment) => PostComment,
+    ) {
+      const applyList = (list: PostComment[]): PostComment[] =>
+        list.map((c) => {
+          if (c.id === commentId) return updater(c)
+          if (c.replies.length) return { ...c, replies: applyList(c.replies) }
+          return c
+        })
+      this.savePosts(
+        this.posts.map((p) => (p.id === postId ? { ...p, comments: applyList(p.comments) } : p)),
+      )
+    },
+
+    // Biểu cảm cho bình luận / reply
+    reactComment(postId: string, commentId: string, reactionType?: ReactionType) {
+      const rx = reactionType || 'like'
+      this.updateCommentInPost(postId, commentId, (c) => {
+        if (c.myReaction === rx) {
+          return { ...c, myReaction: undefined, likesCount: Math.max(0, c.likesCount - 1) }
+        }
+        const delta = c.myReaction ? 0 : 1
+        return { ...c, myReaction: rx, likesCount: c.likesCount + delta }
+      })
+    },
+
+    // Ẩn / hiện bình luận
+    hideComment(postId: string, commentId: string) {
+      this.updateCommentInPost(postId, commentId, (c) => ({ ...c, hidden: !c.hidden }))
+    },
+
+    // Trả lời 1 bình luận (reply 1 cấp)
+    addReply(postId: string, commentId: string, text: string) {
+      const reply: PostComment = {
+        id: `reply-${Date.now()}`,
+        postId,
+        authorId: this.currentUser.id,
+        authorName: this.currentUser.name,
+        authorAvatar: this.currentUser.avatar,
+        content: text,
+        createdAt: new Date().toISOString(),
+        likesCount: 0,
+        replies: [],
+      }
+      this.savePosts(
+        this.posts.map((p) => {
+          if (p.id !== postId) return p
+          return {
+            ...p,
+            commentsCount: p.commentsCount + 1,
+            comments: p.comments.map((c) =>
+              c.id === commentId ? { ...c, replies: [...c.replies, reply] } : c,
+            ),
+          }
+        }),
+      )
+    },
+
+    // Chia sẻ bài viết (tăng đếm + toast)
+    sharePost(postId: string) {
+      this.savePosts(
+        this.posts.map((p) => (p.id === postId ? { ...p, sharesCount: p.sharesCount + 1 } : p)),
+      )
+      this.showToast('Đã sao chép liên kết bài viết vào clipboard 🔗')
     },
 
     // ========================================================
@@ -509,6 +639,50 @@ export const useSocialStore = defineStore('social', {
       }
     },
 
+    // Sửa nội dung tin nhắn
+    editMessage(chatId: string, msgId: string, newText: string) {
+      this.saveChats(
+        this.chats.map((c) => {
+          if (c.id !== chatId) return c
+          const messages = c.messages.map((m) =>
+            m.id === msgId ? { ...m, text: newText, edited: true } : m,
+          )
+          const last = messages[messages.length - 1]
+          return { ...c, messages, lastMessage: last?.text ?? c.lastMessage }
+        }),
+      )
+    },
+
+    // Xóa tin nhắn (của mình hoặc của người khác)
+    deleteMessage(chatId: string, msgId: string) {
+      this.saveChats(
+        this.chats.map((c) => {
+          if (c.id !== chatId) return c
+          const messages = c.messages.filter((m) => m.id !== msgId)
+          const last = messages[messages.length - 1]
+          return { ...c, messages, lastMessage: last?.text ?? '' }
+        }),
+      )
+    },
+
+    // Thả biểu cảm cho tin nhắn
+    reactMessage(chatId: string, msgId: string, emoji: string) {
+      this.saveChats(
+        this.chats.map((c) =>
+          c.id !== chatId
+            ? c
+            : {
+                ...c,
+                messages: c.messages.map((m) =>
+                  m.id === msgId
+                    ? { ...m, reaction: m.reaction === emoji ? undefined : emoji }
+                    : m,
+                ),
+              },
+        ),
+      )
+    },
+
     // ========================================================
     // I. Cập nhật hồ sơ
     // ========================================================
@@ -527,7 +701,7 @@ export const useSocialStore = defineStore('social', {
         {
           id: `sys-notif-${Date.now()}`,
           type: 'system',
-          senderName: 'Hệ thống VietSocial',
+          senderName: 'Hệ thống LongHieu Chanel',
           senderAvatar: avatar,
           message:
             'đã cập nhật thành công thông tin hồ sơ cá nhân và ảnh đại diện của bạn rộng khắp hệ thống.',

@@ -12,7 +12,7 @@ export default defineEventHandler(async (event) => {
   }
 
   const fullPrompt = [
-    `Bạn là trợ lý sáng tạo nội dung mạng xã hội VietSocial.`,
+    `Bạn là trợ lý sáng tạo nội dung mạng xã hội LongHieu Chanel.`,
     `Hãy viết một bài đăng tiếng Việt hấp dẫn, dễ lan tỏa dựa trên ý tưởng sau: "${prompt}".`,
     `Giọng văn: ${tone}. Chủ đề: ${category}.`,
     `Yêu cầu: 2-4 câu, có thể thêm emoji phù hợp và 2-3 hashtag ở cuối. Chỉ trả về nội dung bài đăng, không giải thích.`,

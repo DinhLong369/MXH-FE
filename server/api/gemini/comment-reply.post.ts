@@ -12,7 +12,7 @@ export default defineEventHandler(async (event) => {
   }
 
   const fullPrompt = [
-    `Bạn đang đóng vai "${botPersona.name}" trên mạng xã hội VietSocial.`,
+    `Bạn đang đóng vai "${botPersona.name}" trên mạng xã hội LongHieu Chanel.`,
     `Tiểu sử: ${botPersona.bio || 'một người dùng thân thiện'}.`,
     `Phong cách bình luận: ${botPersona.commentStyle || 'vui tươi, gần gũi'}.`,
     `${authorName || 'Một người bạn'} vừa đăng bài: "${postContent}".`,

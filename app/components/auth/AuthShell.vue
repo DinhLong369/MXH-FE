@@ -29,7 +29,7 @@ const { feedback } = storeToRefs(auth)
           <Sparkles class="h-6 w-6 text-indigo-400 animate-pulse" />
         </div>
       </div>
-      <h1 class="text-3xl font-extrabold tracking-tight bg-gradient-to-r from-slate-100 via-indigo-200 to-sky-300 bg-clip-text text-transparent">VietSocial</h1>
+      <h1 class="text-3xl font-extrabold tracking-tight bg-gradient-to-r from-slate-100 via-indigo-200 to-sky-300 bg-clip-text text-transparent">LongHieu Chanel</h1>
       <p class="text-[11px] text-slate-400 uppercase tracking-widest mt-1.5 font-bold">Multi-Agent Smart Network</p>
     </Motion>
 
@@ -63,7 +63,7 @@ const { feedback } = storeToRefs(auth)
     <AuthEmailSimulator @autofill="$emit('autofill', $event)" />
 
     <Motion :initial="{ opacity: 0 }" :animate="{ opacity: 0.6 }" class="fixed bottom-4 text-[10px] text-slate-500 text-center z-10 leading-relaxed font-mono">
-      VietSocial Authentic Engine (OAuth Security Simulator) • Designed with ♥
+      LongHieu Chanel Authentic Engine (OAuth Security Simulator) • Designed with ♥
     </Motion>
   </div>
 </template>

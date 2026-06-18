@@ -5,11 +5,35 @@ import {
 import type { Post, ReactionType } from '~/types'
 
 const store = useSocialStore()
-const { filteredPosts, currentUser, selectedTag } = storeToRefs(store)
+const { filteredPosts, currentUser, selectedTag, highlightPostId } = storeToRefs(store)
 
 const commentInputs = reactive<Record<string, string>>({})
 const expandedComments = reactive<Record<string, boolean>>({})
 const activeReactionMenu = ref<string | null>(null)
+
+// Cuộn + làm nổi bật bài viết khi bấm từ thông báo
+watch(
+  highlightPostId,
+  async (id) => {
+    if (!id) return
+    expandedComments[id] = true
+    await nextTick()
+    const el = document.getElementById(`feed-post-${id}`)
+    el?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    setTimeout(() => store.clearHighlight(), 2600)
+  },
+  { immediate: true },
+)
+
+async function share(postId: string) {
+  const url = `${window.location.origin}/?post=${postId}`
+  try {
+    await navigator.clipboard.writeText(url)
+  } catch {
+    // clipboard có thể bị chặn — vẫn tăng đếm chia sẻ
+  }
+  store.sharePost(postId)
+}
 
 const reactionEmojis: { type: ReactionType; label: string; icon: string }[] = [
   { type: 'like', label: 'Thích', icon: '👍' },
@@ -105,19 +129,21 @@ function react(postId: string, type: ReactionType) {
         :animate="{ opacity: 1, y: 0, scale: 1 }"
         :transition="{ duration: 0.45, delay: Math.min(5, i) * 0.08, type: 'spring', stiffness: 100, damping: 16 }"
         as="article"
-        class="rounded-3xl border border-slate-800 bg-slate-800/60 hover:bg-slate-800/85 shadow-lg shadow-black/20 hover:border-indigo-500/30 transition card-shine-hover group/card"
+        :id="`feed-post-${post.id}`"
+        class="rounded-3xl border bg-slate-800/60 hover:bg-slate-800/85 shadow-lg shadow-black/20 transition card-shine-hover group/card"
+        :class="highlightPostId === post.id ? 'border-indigo-500 ring-2 ring-indigo-500/40' : 'border-slate-800 hover:border-indigo-500/30'"
       >
         <div class="p-5">
           <!-- Author -->
           <div class="flex items-center justify-between mb-4">
             <div class="flex items-center gap-3">
               <div class="relative">
-                <img :src="post.authorAvatar" :alt="post.authorName" class="h-10 w-10 rounded-full object-cover ring-2 ring-slate-800/80" referrerpolicy="no-referrer">
+                <img :src="post.authorAvatar" :alt="post.authorName" class="h-10 w-10 rounded-full object-cover ring-2 ring-slate-800/80 cursor-pointer hover:ring-indigo-400/50 transition" referrerpolicy="no-referrer" @click="store.viewProfile(post.userId)">
                 <span class="absolute bottom-0 right-0 h-2.5 w-2.5 rounded-full bg-emerald-500 ring-2 ring-slate-800" />
               </div>
               <div>
                 <div class="flex items-center gap-1.5 flex-wrap">
-                  <h3 class="text-sm font-bold text-slate-100 hover:text-indigo-400 cursor-pointer">{{ post.authorName }}</h3>
+                  <h3 class="text-sm font-bold text-slate-100 hover:text-indigo-400 hover:underline cursor-pointer" @click="store.viewProfile(post.userId)">{{ post.authorName }}</h3>
                   <CheckCircle2 class="h-3.5 w-3.5 fill-indigo-500 text-slate-800" />
                   <span class="font-mono text-[9px] text-slate-500 font-medium">@{{ post.authorUsername }}</span>
                   <span v-if="post.userId !== currentUser.id" class="rounded bg-indigo-950/60 px-1.5 py-0.5 font-bold text-[8px] text-indigo-400 border border-indigo-500/25">AI Bot</span>
@@ -201,7 +227,7 @@ function react(postId: string, type: ReactionType) {
               <span>Bình luận</span>
             </button>
 
-            <button class="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold text-slate-400 hover:bg-slate-800 transition">
+            <button class="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold text-slate-400 hover:bg-slate-800 transition" @click="share(post.id)">
               <Share2 class="h-4 w-4" />
               <span>Chia sẻ</span>
             </button>
@@ -218,16 +244,12 @@ function react(postId: string, type: ReactionType) {
 
           <!-- Comments -->
           <div v-if="expandedComments[post.id] || post.comments.length" class="mt-3 border-t border-slate-800 pt-3 space-y-3">
-            <div v-for="c in post.comments" :key="c.id" class="flex items-start gap-2.5">
-              <img :src="c.authorAvatar" :alt="c.authorName" class="h-8 w-8 rounded-full object-cover" referrerpolicy="no-referrer">
-              <div class="flex-1 rounded-2xl bg-slate-950/70 px-3.5 py-2 border border-slate-800">
-                <div class="flex items-center gap-1.5">
-                  <span class="text-xs font-bold text-slate-200">{{ c.authorName }}</span>
-                  <span class="text-[9px] text-slate-500">{{ getRelativeTime(c.createdAt) }}</span>
-                </div>
-                <p class="text-[13px] text-slate-300 mt-0.5 leading-relaxed">{{ c.content }}</p>
-              </div>
-            </div>
+            <CommentItem
+              v-for="c in post.comments"
+              :key="c.id"
+              :comment="c"
+              :post-id="post.id"
+            />
 
             <!-- Comment input -->
             <div class="flex items-center gap-2.5">

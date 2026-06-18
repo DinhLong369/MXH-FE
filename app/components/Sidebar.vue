@@ -32,7 +32,7 @@ function badge(key: string): number {
       <div class="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-indigo-500 to-violet-600 shadow-lg shadow-indigo-900/40">
         <Sparkles class="h-5 w-5 text-white" />
       </div>
-      <span class="text-lg font-extrabold tracking-tight bg-gradient-to-r from-indigo-400 to-violet-400 bg-clip-text text-transparent">VietSocial</span>
+      <span class="text-lg font-extrabold tracking-tight bg-gradient-to-r from-indigo-400 to-violet-400 bg-clip-text text-transparent">LongHieu Chanel</span>
     </div>
 
     <nav class="flex flex-col gap-1">
