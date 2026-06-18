@@ -1,0 +1,42 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html {
+    font-family: 'Inter', system-ui, sans-serif;
+    scroll-behavior: smooth;
+  }
+  body {
+    @apply bg-[#0a0f1d] text-slate-200 antialiased;
+  }
+}
+
+@layer utilities {
+  /* Hiệu ứng shine khi hover card */
+  .card-shine-hover {
+    position: relative;
+  }
+  .card-shine-hover::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    background: linear-gradient(120deg, transparent 30%, rgba(99, 102, 241, 0.06) 50%, transparent 70%);
+    opacity: 0;
+    transition: opacity 0.4s ease;
+    pointer-events: none;
+  }
+  .card-shine-hover:hover::after {
+    opacity: 1;
+  }
+
+  /* Scrollbar mảnh cho khu vực cuộn */
+  .thin-scrollbar::-webkit-scrollbar {
+    width: 6px;
+  }
+  .thin-scrollbar::-webkit-scrollbar-thumb {
+    background: rgba(99, 102, 241, 0.3);
+    border-radius: 9999px;
+  }
+}
