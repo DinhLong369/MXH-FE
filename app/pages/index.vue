@@ -24,10 +24,10 @@ const showRightBar = computed(() =>
     <div v-if="isGlobalLoading" class="fixed top-0 left-0 right-0 z-50 h-1 bg-gradient-to-r from-indigo-500 via-orange-500 to-violet-500 animate-pulse" />
 
     <ClientOnly>
-      <div class="flex-grow w-full max-w-7xl mx-auto flex flex-col md:flex-row items-stretch relative z-10">
+      <div class="h-screen w-full max-w-7xl mx-auto flex flex-col md:flex-row items-stretch relative z-10 overflow-hidden">
         <Sidebar />
 
-        <main class="flex-1 flex justify-center pb-24 md:pb-6 overflow-y-auto min-h-screen thin-scrollbar">
+        <main class="flex-1 flex justify-center pb-24 md:pb-6 h-screen overflow-y-auto thin-scrollbar">
           <AnimatePresence mode="wait">
             <Motion
               :key="currentTab"

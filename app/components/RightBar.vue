@@ -15,7 +15,7 @@ function launch() {
 </script>
 
 <template>
-  <aside class="hidden lg:flex w-80 shrink-0 flex-col gap-5 p-4 border-l border-slate-800/60 overflow-y-auto thin-scrollbar">
+  <aside class="hidden lg:flex w-80 shrink-0 flex-col gap-5 p-4 border-l border-slate-800/60 h-screen overflow-y-auto thin-scrollbar">
     <!-- AI Writer widget -->
     <div class="rounded-3xl border border-indigo-500/20 bg-gradient-to-br from-indigo-950/40 to-slate-900/40 p-4">
       <div class="flex items-center gap-2 mb-2">

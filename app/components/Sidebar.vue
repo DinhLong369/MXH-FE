@@ -1,8 +1,14 @@
 <script setup lang="ts">
-import { Home, Compass, MessageCircle, Bell, User, PenSquare, Sparkles } from 'lucide-vue-next'
+import { Home, Compass, MessageCircle, Bell, User, PenSquare, Sparkles, LogOut } from 'lucide-vue-next'
 
 const store = useSocialStore()
+const auth = useAuthStore()
 const { currentTab, currentUser, unreadMessagesCount, unreadNotificationsCount } = storeToRefs(store)
+
+function logout() {
+  auth.logout()
+  navigateTo('/login')
+}
 
 const items = [
   { key: 'home', label: 'Trang chủ', icon: Home },
@@ -21,7 +27,7 @@ function badge(key: string): number {
 
 <template>
   <!-- Desktop sidebar -->
-  <aside class="hidden md:flex md:w-64 lg:w-72 shrink-0 flex-col gap-2 p-4 border-r border-slate-800/60">
+  <aside class="hidden md:flex md:w-64 lg:w-72 shrink-0 flex-col gap-2 p-4 border-r border-slate-800/60 md:h-screen overflow-y-auto thin-scrollbar">
     <div class="flex items-center gap-2 px-3 py-4 mb-2">
       <div class="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-indigo-500 to-violet-600 shadow-lg shadow-indigo-900/40">
         <Sparkles class="h-5 w-5 text-white" />
@@ -54,13 +60,18 @@ function badge(key: string): number {
     </button>
 
     <!-- User card -->
-    <button class="mt-auto flex items-center gap-3 rounded-2xl border border-slate-800 bg-slate-800/40 p-3 hover:bg-slate-800/70 transition" @click="store.setTab('profile')">
-      <img :src="currentUser.avatar" :alt="currentUser.name" class="h-10 w-10 rounded-full object-cover ring-2 ring-indigo-500/20" referrerpolicy="no-referrer">
-      <div class="text-left overflow-hidden">
-        <p class="text-xs font-bold text-slate-100 truncate">{{ currentUser.name }}</p>
-        <p class="text-[10px] text-slate-500 truncate">@{{ currentUser.username }}</p>
-      </div>
-    </button>
+    <div class="mt-auto flex items-center gap-3 rounded-2xl border border-slate-800 bg-slate-800/40 p-3">
+      <button class="flex flex-1 items-center gap-3 overflow-hidden hover:opacity-90 transition" @click="store.setTab('profile')">
+        <img :src="currentUser.avatar" :alt="currentUser.name" class="h-10 w-10 rounded-full object-cover ring-2 ring-indigo-500/20" referrerpolicy="no-referrer">
+        <div class="text-left overflow-hidden">
+          <p class="text-sm font-bold text-slate-100 truncate">{{ currentUser.name }}</p>
+          <p class="text-[10px] text-slate-500 truncate">@{{ currentUser.username }}</p>
+        </div>
+      </button>
+      <button class="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-slate-500 hover:bg-rose-950/40 hover:text-rose-400 transition" title="Đăng xuất" @click="logout">
+        <LogOut class="h-4.5 w-4.5" />
+      </button>
+    </div>
   </aside>
 
   <!-- Mobile bottom nav -->
