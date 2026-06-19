@@ -66,18 +66,21 @@ function getArray(value: unknown): unknown[] {
   return Array.isArray(nested) ? nested : []
 }
 
-// Nếu nội dung tin nhắn là 1 URL ảnh (gửi qua S3) thì nhận diện loại để render ảnh
-// thay vì hiển thị link text.
-function detectMediaKind(text: string): 'image' | 'gif' | null {
+// Nếu nội dung tin nhắn là 1 URL media (gửi qua S3) thì nhận diện loại để render
+// đúng player thay vì hiển thị link text.
+function detectMediaKind(text: string): 'image' | 'video' | 'audio' | 'gif' | null {
   const t = text.trim()
   if (!/^https?:\/\/\S+$/i.test(t)) return null
   const clean = t.split('?')[0]!.toLowerCase()
   if (clean.endsWith('.gif')) return 'gif'
   if (/\.(jpe?g|png|webp|avif|bmp|svg)$/.test(clean)) return 'image'
+  if (/\.(mp4|webm|mov|m4v|avi|mkv)$/.test(clean)) return 'video'
+  if (/\.(mp3|wav|ogg|m4a|aac|flac|webm)$/.test(clean)) return 'audio'
   return null
 }
 
 const LOCATION_PREFIX = '__lh_location__:'
+const MEDIA_PREFIX = '__lh_media__:'
 
 function encodeLocationPayload(location: Message['location']) {
   return `${LOCATION_PREFIX}${JSON.stringify(location || { label: 'Vị trí đã chia sẻ' })}`
@@ -93,9 +96,75 @@ function decodeLocationPayload(text: string): Message['location'] | null {
   }
 }
 
+function encodeMediaPayload(msg: Message) {
+  return `${MEDIA_PREFIX}${JSON.stringify({ kind: msg.kind, url: msg.image })}`
+}
+
+function decodeMediaPayload(text: string): Pick<Message, 'kind' | 'image'> | null {
+  const markerIndex = text.indexOf(MEDIA_PREFIX)
+  if (markerIndex < 0) return null
+  try {
+    const parsed = JSON.parse(text.slice(markerIndex + MEDIA_PREFIX.length).trim()) as { kind?: Message['kind']; url?: string }
+    const kind = parsed.kind
+    if ((kind === 'image' || kind === 'video' || kind === 'audio' || kind === 'gif') && parsed.url) {
+      return { kind, image: parsed.url }
+    }
+  } catch {
+    return null
+  }
+  return null
+}
+
+function normalizeMessagePayload(message: Message): Message {
+  const text = message.text || ''
+  const location = text ? decodeLocationPayload(text) : null
+  if (location) {
+    return {
+      ...message,
+      text: '',
+      kind: 'location',
+      location,
+    }
+  }
+
+  const mediaPayload = text ? decodeMediaPayload(text) : null
+  if (mediaPayload) {
+    return {
+      ...message,
+      text: '',
+      kind: mediaPayload.kind,
+      image: mediaPayload.image,
+    }
+  }
+
+  const mediaKind = text ? detectMediaKind(text) : null
+  if (mediaKind) {
+    return {
+      ...message,
+      text: '',
+      kind: mediaKind,
+      image: text.trim(),
+    }
+  }
+
+  return message
+}
+
+function normalizeChat(chat: Chat): Chat {
+  const messages = chat.messages.map(normalizeMessagePayload)
+  const last = messages[messages.length - 1]
+  return {
+    ...chat,
+    messages,
+    lastMessage: last ? messagePreview(last) : chat.lastMessage,
+  }
+}
+
 function messagePreview(msg: Pick<Message, 'text' | 'kind' | 'image' | 'location' | 'voiceDuration'>) {
   if (msg.text) return msg.text
   if (msg.kind === 'image') return '📷 Hình ảnh'
+  if (msg.kind === 'video') return '🎬 Video'
+  if (msg.kind === 'audio') return '🎧 Âm thanh'
   if (msg.kind === 'gif') return 'GIF'
   if (msg.kind === 'sticker') return 'Nhãn dán'
   if (msg.kind === 'voice') return '🎤 Tin nhắn thoại'
@@ -105,6 +174,9 @@ function messagePreview(msg: Pick<Message, 'text' | 'kind' | 'image' | 'location
 
 function messageTransportContent(msg: Message) {
   if (msg.kind === 'location') return encodeLocationPayload(msg.location)
+  if ((msg.kind === 'image' || msg.kind === 'video' || msg.kind === 'audio' || msg.kind === 'gif') && msg.image) {
+    return encodeMediaPayload(msg)
+  }
   if (msg.kind === 'voice') return `[Tin nhắn thoại ${msg.voiceDuration || 0}s]`
   return msg.image || msg.text
 }
@@ -153,7 +225,8 @@ export const useSocialStore = defineStore('social', {
   }),
 
   getters: {
-    unreadMessagesCount: (s) => s.chats.reduce((acc, c) => acc + c.unreadCount, 0),
+    unreadMessagesCount: (s) =>
+      s.chats.filter((c) => !c.hidden).reduce((acc, c) => acc + c.unreadCount, 0),
     isUserOnline: (s) => (userId: string) => s.onlineUserIds.includes(userId),
     getUserStatusLabel: (s) => (userId: string, lastSeenAt?: string): string => {
       if (s.onlineUserIds.includes(userId)) return 'Đang hoạt động'
@@ -275,7 +348,8 @@ export const useSocialStore = defineStore('social', {
       // E. Chats (seed DM với từng bot)
       const localChats = readLS<Chat[]>(LS.chats)
       if (localChats) {
-        this.chats = localChats
+        this.chats = localChats.map(normalizeChat)
+        writeLS(LS.chats, this.chats)
       } else {
         this.chats = this.seedChats()
         writeLS(LS.chats, this.chats)
@@ -363,8 +437,9 @@ export const useSocialStore = defineStore('social', {
       writeLS(LS.posts, newPosts)
     },
     saveChats(newChats: Chat[]) {
-      this.chats = newChats
-      writeLS(LS.chats, newChats)
+      const normalizedChats = newChats.map(normalizeChat)
+      this.chats = normalizedChats
+      writeLS(LS.chats, normalizedChats)
     },
     saveNotifs(newNotifs: AppNotification[]) {
       this.notifications = newNotifs
@@ -899,14 +974,15 @@ export const useSocialStore = defineStore('social', {
       const myId = auth.getApiUserId()
       const isMine = senderId !== '' && (senderId === myId || senderId === this.currentUser.id)
       const location = decodeLocationPayload(text)
-      const mediaKind = location ? null : detectMediaKind(text)
+      const mediaPayload = location ? null : decodeMediaPayload(text)
+      const mediaKind = location || mediaPayload ? null : detectMediaKind(text)
       return {
         id,
         chatId,
         sender: isMine ? 'me' : 'them',
-        text: mediaKind || location ? '' : text,
-        kind: location ? 'location' : mediaKind || undefined,
-        image: mediaKind ? text : undefined,
+        text: mediaPayload || mediaKind || location ? '' : text,
+        kind: location ? 'location' : mediaPayload?.kind || mediaKind || undefined,
+        image: mediaPayload?.image || (mediaKind ? text : undefined),
         location: location || undefined,
         createdAt: getString(item, ['created_at', 'updated_at'], new Date().toISOString()),
       }
@@ -928,7 +1004,10 @@ export const useSocialStore = defineStore('social', {
         const apiChats = getArray(response.data)
           .map((item) => this.mapApiConversation(item))
           .filter((chat): chat is Chat => Boolean(chat))
-        if (!apiChats.length) return
+        if (!apiChats.length) {
+          this.saveChats(this.chats.filter((chat) => !isUuidFormat(chat.id)))
+          return
+        }
 
         const chatsWithMessages = await Promise.all(
           apiChats.map(async (chat) => {
@@ -946,11 +1025,19 @@ export const useSocialStore = defineStore('social', {
                 page: 1,
                 limit: 50,
               })
-              const apiMessages = getArray(messages.data)
+              const rawMessages = getArray(messages.data)
+              const apiMessages = rawMessages
                 .map((item) => this.mapApiMessage(item, chat.id))
                 .filter((message): message is Message => Boolean(message))
                 .reverse() // API trả về DESC (mới→cũ), reverse để hiển thị đúng cũ→mới
-              if (!apiMessages.length) return merged
+              if (!apiMessages.length) {
+                return {
+                  ...merged,
+                  messages: [],
+                  lastMessage: rawMessages.length ? merged.lastMessage : '',
+                  lastMessageTime: rawMessages.length ? merged.lastMessageTime : '',
+                }
+              }
               const last = apiMessages[apiMessages.length - 1]
               return {
                 ...merged,
@@ -1042,6 +1129,7 @@ export const useSocialStore = defineStore('social', {
                 lastMessage: replyText,
                 lastMessageTime: 'Vừa xong',
                 unreadCount: isActivelyReading ? 0 : c.unreadCount + 1,
+                hidden: false,
               }
             : c,
         ),
@@ -1314,6 +1402,7 @@ export const useSocialStore = defineStore('social', {
               lastMessageTime: 'Vừa xong',
               // Không tăng unread nếu đang xem conversation này
               unreadCount: isActiveConversation ? 0 : c.unreadCount + 1,
+              hidden: false,
             }
           }),
         )
@@ -1432,6 +1521,76 @@ export const useSocialStore = defineStore('social', {
       if (isUuidFormat(chatId) && wsConn?.readyState === WebSocket.OPEN) {
         wsConn.send(JSON.stringify({ type: 'seen', conversation_id: chatId }))
       }
+    },
+
+    markChatUnread(chatId: string) {
+      this.saveChats(
+        this.chats.map((c) => (c.id === chatId ? { ...c, unreadCount: Math.max(1, c.unreadCount) } : c)),
+      )
+    },
+
+    hideChat(chatId: string) {
+      this.saveChats(this.chats.map((c) => (c.id === chatId ? { ...c, hidden: true } : c)))
+      if (this.activeChatInMessenger === chatId) this.activeChatInMessenger = null
+      this.showToast('Đã ẩn cuộc trò chuyện.')
+    },
+
+    unhideChat(chatId: string) {
+      this.saveChats(this.chats.map((c) => (c.id === chatId ? { ...c, hidden: false } : c)))
+      this.showToast('Đã hiện lại cuộc trò chuyện.')
+    },
+
+    deleteChat(chatId: string) {
+      this.saveChats(this.chats.filter((c) => c.id !== chatId))
+      if (this.activeChatInMessenger === chatId) this.activeChatInMessenger = null
+      this.showToast('Đã xóa cuộc trò chuyện trên thiết bị này.')
+    },
+
+    createGroupChat(name: string, members: ApiUserResult[]) {
+      const groupName = name.trim() || 'Nhóm mới'
+      const mappedMembers: UserProfile[] = members.map((member) => ({
+        id: member.id,
+        name: member.name || member.username || 'Thành viên',
+        username: member.username || member.email || member.id,
+        avatar:
+          member.avatar ||
+          'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=200&q=80',
+        cover:
+          'https://images.unsplash.com/photo-1519681393784-d120267933ba?auto=format&fit=crop&w=1200&q=80',
+        bio: 'Thành viên nhóm chat LongHieu Chanel.',
+        followersCount: 0,
+        followingCount: 0,
+        postsCount: 0,
+        isAI: false,
+      }))
+      const chatId = `group-${Date.now()}`
+      const chat: Chat = {
+        id: chatId,
+        targetUser: {
+          id: chatId,
+          name: groupName,
+          username: 'group.chat',
+          avatar:
+            mappedMembers[0]?.avatar ||
+            'https://images.unsplash.com/photo-1521737604893-d14cc237f11d?auto=format&fit=crop&w=200&q=80',
+          cover:
+            'https://images.unsplash.com/photo-1519681393784-d120267933ba?auto=format&fit=crop&w=1200&q=80',
+          bio: `Nhóm chat với ${mappedMembers.length + 1} thành viên.`,
+          followersCount: mappedMembers.length + 1,
+          followingCount: 0,
+          postsCount: 0,
+          isAI: false,
+        },
+        unreadCount: 0,
+        messages: [],
+        lastMessage: `${this.currentUser.name} đã tạo nhóm.`,
+        lastMessageTime: 'Vừa xong',
+        isGroup: true,
+        members: [this.currentUser, ...mappedMembers],
+      }
+      this.saveChats([chat, ...this.chats])
+      this.showToast('Đã tạo nhóm chat.')
+      return chatId
     },
 
     // Ghi nhớ conversation đang mở trong Messenger

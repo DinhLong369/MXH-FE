@@ -65,7 +65,7 @@ export interface Post {
   createdAt: string
 }
 
-export type MessageKind = 'text' | 'image' | 'gif' | 'sticker' | 'location' | 'voice'
+export type MessageKind = 'text' | 'image' | 'video' | 'audio' | 'gif' | 'sticker' | 'location' | 'voice'
 
 export interface Message {
   id: string
@@ -77,7 +77,7 @@ export interface Message {
   edited?: boolean
   // Loại tin nhắn (mặc định 'text')
   kind?: MessageKind
-  // Ảnh / GIF / sticker (data URL hoặc URL ngoài)
+  // Media URL: ảnh / video / audio / GIF / sticker (URL S3 hoặc URL ngoài)
   image?: string
   // Tin nhắn thoại (giả lập): thời lượng tính bằng giây
   voiceDuration?: number
@@ -95,6 +95,9 @@ export interface Chat {
   lastMessage: string
   lastMessageTime: string
   lastSeenAt?: string  // Thời điểm người kia cuối cùng đã đọc conversation này
+  hidden?: boolean
+  isGroup?: boolean
+  members?: UserProfile[]
 }
 
 export interface Group {

@@ -2,7 +2,7 @@
 import {
   Send, MessageCircle, ArrowLeft, ArrowDown, SmilePlus, Pencil, Trash2, Check, X,
   Image as ImageIcon, Copy, Mic, Video, MapPin, Smile, Film, Plus, PhoneOff,
-  SquarePen, Search, MoreVertical,
+  SquarePen, Search, MoreVertical, EyeOff, Eye, CheckCheck, MailOpen, Users,
 } from 'lucide-vue-next'
 import type { Chat, Message } from '~/types'
 import type { ApiUserResult } from '~/types/api'
@@ -10,19 +10,26 @@ import type { ApiUserResult } from '~/types/api'
 const store = useSocialStore()
 const { chats, currentUser } = storeToRefs(store)
 
-const activeChatId = ref<string | null>(chats.value[0]?.id ?? null)
+const showHiddenChats = ref(false)
+const visibleChats = computed(() => chats.value.filter((chat) => !chat.hidden))
+const hiddenChats = computed(() => chats.value.filter((chat) => chat.hidden))
+const listedChats = computed(() => showHiddenChats.value ? hiddenChats.value : visibleChats.value)
+const activeChatId = ref<string | null>(visibleChats.value[0]?.id ?? null)
 const draft = ref('')
 const isBotTyping = ref(false)
 const scrollEl = ref<HTMLElement | null>(null)
 const fileInput = ref<HTMLInputElement | null>(null)
 const isUploading = ref(false)
+const uploadingLabel = ref('media')
 const showJumpToLatest = ref(false)
 const hasNewInActiveChat = ref(false)
+const loadedMediaIds = ref<Set<string>>(new Set())
 
 // Sửa / biểu cảm tin nhắn
 const editingId = ref<string | null>(null)
 const editText = ref('')
 const reactMenuId = ref<string | null>(null)
+const chatActionMenuId = ref<string | null>(null)
 const quickEmojis = ['👍', '❤️', '😆', '😮', '😢', '🙏']
 
 // Bảng đính kèm / sticker / gif
@@ -43,10 +50,13 @@ const showChatMenu = ref(false)
 
 // Tìm kiếm người dùng để nhắn tin mới
 const showSearch = ref(false)
+const showGroupModal = ref(false)
 const searchQuery = ref('')
 const searchResults = ref<ApiUserResult[]>([])
 const searchLoading = ref(false)
 let searchDebounce: ReturnType<typeof setTimeout> | null = null
+const groupName = ref('')
+const groupMembers = ref<ApiUserResult[]>([])
 
 const STICKERS = ['😀', '😍', '🥳', '😎', '🤩', '😂', '😭', '👍', '❤️', '🔥', '🎉', '🙏', '💯', '👏', '🤔', '🥰', '😡', '🤯']
 const GIFS = [
@@ -58,7 +68,7 @@ const GIFS = [
   'https://media.giphy.com/media/111ebonMs90YLu/giphy.gif',
 ]
 
-const activeChat = computed(() => chats.value.find((c) => c.id === activeChatId.value) || null)
+const activeChat = computed(() => visibleChats.value.find((c) => c.id === activeChatId.value) || null)
 
 // Hội thoại thật từ API có id dạng UUID; chat với bot AI thì không.
 function isUuid(id: string) {
@@ -90,19 +100,86 @@ const lastMyMsgSeen = computed(() => {
 function selectChat(id: string) {
   activeChatId.value = id
   showSearch.value = false
+  chatActionMenuId.value = null
   closePanels()
   // Luôn đánh dấu đã đọc khi mở (kể cả khi đang là chat active sẵn → watch không bắn)
   store.setActiveChatInMessenger(id)
 }
 
+function closeChatActions() {
+  chatActionMenuId.value = null
+}
+
+function closeFloatingMenus() {
+  chatActionMenuId.value = null
+  reactMenuId.value = null
+  showAttachMenu.value = false
+  showStickerPanel.value = false
+  showChatMenu.value = false
+}
+
+function onDocumentClick(e: MouseEvent) {
+  const target = e.target
+  if (target instanceof Element && target.closest('[data-messenger-popover]')) return
+  closeFloatingMenus()
+}
+
+function hideChat(chatId: string) {
+  store.hideChat(chatId)
+  if (activeChatId.value === chatId) activeChatId.value = visibleChats.value.find((c) => c.id !== chatId)?.id ?? null
+  closeChatActions()
+}
+
+function unhideChat(chatId: string) {
+  store.unhideChat(chatId)
+  showHiddenChats.value = false
+  activeChatId.value = chatId
+  store.setActiveChatInMessenger(chatId)
+  closeChatActions()
+}
+
+function deleteChat(chatId: string) {
+  store.deleteChat(chatId)
+  if (activeChatId.value === chatId) activeChatId.value = visibleChats.value.find((c) => c.id !== chatId)?.id ?? null
+  closeChatActions()
+}
+
+function markRead(chatId: string) {
+  store.markChatRead(chatId)
+  closeChatActions()
+}
+
+function markUnread(chatId: string) {
+  store.markChatUnread(chatId)
+  closeChatActions()
+}
+
 // ---------- Tìm người dùng + mở hội thoại mới ----------
 function openSearch() {
+  showHiddenChats.value = false
   showSearch.value = true
+  showGroupModal.value = false
   searchQuery.value = ''
   searchResults.value = []
 }
 function closeSearch() {
   showSearch.value = false
+  searchQuery.value = ''
+  searchResults.value = []
+}
+function openGroupModal() {
+  showHiddenChats.value = false
+  showGroupModal.value = true
+  showSearch.value = false
+  groupName.value = ''
+  groupMembers.value = []
+  searchQuery.value = ''
+  searchResults.value = []
+}
+function closeGroupModal() {
+  showGroupModal.value = false
+  groupName.value = ''
+  groupMembers.value = []
   searchQuery.value = ''
   searchResults.value = []
 }
@@ -121,6 +198,23 @@ function onSearchInput() {
       searchLoading.value = false
     }
   }, 300)
+}
+function toggleGroupMember(user: ApiUserResult) {
+  const exists = groupMembers.value.some((member) => member.id === user.id)
+  groupMembers.value = exists
+    ? groupMembers.value.filter((member) => member.id !== user.id)
+    : [...groupMembers.value, user]
+}
+function createGroup() {
+  if (!groupMembers.value.length) {
+    store.showToast('Chọn ít nhất 1 thành viên để tạo nhóm.')
+    return
+  }
+  const chatId = store.createGroupChat(groupName.value, groupMembers.value)
+  closeGroupModal()
+  store.setTab('messenger')
+  activeChatId.value = chatId
+  store.setActiveChatInMessenger(chatId)
 }
 async function startChatWith(user: ApiUserResult) {
   closeSearch()
@@ -192,8 +286,16 @@ async function copyMessage(msg: Message) {
   reactMenuId.value = null
 }
 
+function waitForFrame() {
+  return new Promise<void>((resolve) => requestAnimationFrame(() => resolve()))
+}
+
 async function scrollToBottom() {
   await nextTick()
+  if (import.meta.client) {
+    await waitForFrame()
+    await waitForFrame()
+  }
   if (scrollEl.value) {
     scrollEl.value.scrollTop = scrollEl.value.scrollHeight
     showJumpToLatest.value = false
@@ -216,10 +318,28 @@ function onMessagesScroll() {
   }
 }
 
+function onMessageMediaLoaded() {
+  if (!isNearBottom(220)) return
+  scrollToBottom()
+}
+
+function isMediaLoaded(msgId: string) {
+  return loadedMediaIds.value.has(msgId)
+}
+
+function markMediaLoaded(msgId: string) {
+  if (!loadedMediaIds.value.has(msgId)) {
+    loadedMediaIds.value = new Set([...loadedMediaIds.value, msgId])
+  }
+  onMessageMediaLoaded()
+}
+
 // ---------- Gửi tin nhắn ----------
 function botContext(extra: Partial<Message>): string {
   switch (extra.kind) {
     case 'image': return '[Tôi vừa gửi một hình ảnh]'
+    case 'video': return '[Tôi vừa gửi một video]'
+    case 'audio': return '[Tôi vừa gửi một tệp âm thanh]'
     case 'gif': return '[Tôi vừa gửi một ảnh GIF vui]'
     case 'sticker': return `[Tôi vừa gửi một nhãn dán: ${extra.text || ''}]`
     case 'voice': return '[Tôi vừa gửi một tin nhắn thoại]'
@@ -276,15 +396,15 @@ function pushAttachment(text: string, extra: Partial<Message>) {
   if (!isUuid(chat.id)) botReply(chat, text || botContext(extra))
 }
 
-// ---------- Ảnh từ thiết bị + dán ảnh ----------
-function triggerImagePick() {
+// ---------- Media từ thiết bị + dán ảnh ----------
+function triggerMediaPick() {
   closePanels()
   fileInput.value?.click()
 }
 function onFileChange(e: Event) {
   const input = e.target as HTMLInputElement
   const file = input.files?.[0]
-  if (file) sendImageFile(file)
+  if (file) sendMediaFile(file)
   input.value = ''
 }
 
@@ -297,30 +417,53 @@ function fileToDataUrl(file: File): Promise<string> {
   })
 }
 
-// Ưu tiên upload S3 qua API; nếu thất bại (chưa đăng nhập API / lỗi mạng)
-// thì fallback nhúng base64 để vẫn gửi được trong bản demo.
-async function uploadImage(file: File): Promise<string> {
+function mediaKindFromFile(file: File): 'image' | 'video' | 'audio' | 'gif' | null {
+  if (file.type.startsWith('image/')) return file.type === 'image/gif' ? 'gif' : 'image'
+  if (file.type.startsWith('video/')) return 'video'
+  if (file.type.startsWith('audio/')) return 'audio'
+  return null
+}
+
+function mediaLabel(kind: 'image' | 'video' | 'audio' | 'gif') {
+  if (kind === 'video') return 'video'
+  if (kind === 'audio') return 'audio'
+  if (kind === 'gif') return 'GIF'
+  return 'ảnh'
+}
+
+// Ảnh vẫn fallback base64 cho bản demo cũ. Video/audio bắt buộc đi qua S3.
+async function uploadMedia(file: File, kind: 'image' | 'video' | 'audio' | 'gif'): Promise<string> {
   const token = useAuthStore().getAccessToken()
   if (token) {
     try {
       const res = await useMxhApi().media.upload(token, file)
       const url = extractMediaUrl(res)
       if (url) return url
-      console.warn('Upload S3 không trả về URL, dùng ảnh cục bộ.')
+      console.warn('Upload S3 không trả về URL.')
     } catch (err) {
-      console.warn('Upload ảnh lên S3 thất bại, dùng ảnh cục bộ:', err)
+      console.warn(`Upload ${mediaLabel(kind)} lên S3 thất bại:`, err)
     }
+  }
+  if (kind === 'video' || kind === 'audio') {
+    throw new Error('Media phải upload lên S3 trước khi gửi.')
   }
   return fileToDataUrl(file)
 }
 
-async function sendImageFile(file: File) {
-  if (!activeChat.value || !file.type.startsWith('image/')) return
+async function sendMediaFile(file: File) {
+  const kind = mediaKindFromFile(file)
+  if (!activeChat.value || !kind) {
+    store.showToast('Chỉ hỗ trợ ảnh, video hoặc audio.')
+    return
+  }
   isUploading.value = true
-  store.showToast('Đang tải ảnh lên...')
+  uploadingLabel.value = mediaLabel(kind)
+  store.showToast(`Đang tải ${uploadingLabel.value} lên S3...`)
   try {
-    const url = await uploadImage(file)
-    pushAttachment('', { kind: 'image', image: url })
+    const url = await uploadMedia(file, kind)
+    pushAttachment('', { kind, image: url })
+  } catch {
+    store.showToast(`Không tải được ${uploadingLabel.value} lên S3.`)
   } finally {
     isUploading.value = false
   }
@@ -333,7 +476,7 @@ function onPaste(e: ClipboardEvent) {
       const file = it.getAsFile()
       if (file) {
         e.preventDefault()
-        sendImageFile(file)
+        sendMediaFile(file)
       }
       break
     }
@@ -423,11 +566,26 @@ function timeLabel(iso: string): string {
   }
 }
 
-watch(activeChatId, (id) => {
+watch(activeChatId, async (id) => {
   showJumpToLatest.value = false
   hasNewInActiveChat.value = false
-  scrollToBottom()
   if (id) store.setActiveChatInMessenger(id)
+  if (id) await scrollToBottom()
+})
+
+watch(visibleChats, (items) => {
+  if (activeChatId.value && items.some((chat) => chat.id === activeChatId.value)) return
+  activeChatId.value = items[0]?.id ?? null
+})
+
+watch(showHiddenChats, (isHiddenList) => {
+  closeChatActions()
+  if (isHiddenList) {
+    activeChatId.value = null
+    store.setActiveChatInMessenger(null)
+    return
+  }
+  if (!activeChatId.value) activeChatId.value = visibleChats.value[0]?.id ?? null
 })
 
 watch(
@@ -447,16 +605,18 @@ watch(
 )
 
 onMounted(async () => {
+  if (import.meta.client) document.addEventListener('click', onDocumentClick)
   await store.syncChatsFromApi()
   store.connectWebSocket()
-  const firstId = chats.value[0]?.id ?? null
+  const firstId = visibleChats.value[0]?.id ?? null
   if (!activeChatId.value && firstId) {
     activeChatId.value = firstId
     store.setActiveChatInMessenger(firstId)
   }
-  await scrollToBottom()
+  if (activeChatId.value) await scrollToBottom()
 })
 onUnmounted(() => {
+  if (import.meta.client) document.removeEventListener('click', onDocumentClick)
   store.setActiveChatInMessenger(null)
   if (recordTimer) clearInterval(recordTimer)
   if (searchDebounce) clearTimeout(searchDebounce)
@@ -472,33 +632,82 @@ onUnmounted(() => {
         :class="activeChat && 'hidden md:flex' || 'flex'"
       >
         <div class="px-4 py-3.5 border-b border-slate-800 shrink-0 flex items-center justify-between">
-          <h2 class="text-sm font-bold text-slate-100">Tin nhắn</h2>
-          <button
-            class="flex h-7 w-7 items-center justify-center rounded-full text-slate-400 hover:bg-slate-700 hover:text-slate-100 transition"
-            title="Nhắn tin mới"
-            @click="openSearch"
-          >
-            <SquarePen class="h-4 w-4" />
-          </button>
+          <div>
+            <h2 class="text-sm font-bold text-slate-100">{{ showHiddenChats ? 'Đã ẩn' : 'Tin nhắn' }}</h2>
+            <p v-if="showHiddenChats" class="mt-0.5 text-[10px] font-semibold text-slate-500">Chọn một cuộc trò chuyện để hiện lại</p>
+          </div>
+          <div class="flex items-center gap-1">
+            <button
+              v-if="hiddenChats.length"
+              class="flex h-7 items-center gap-1.5 rounded-full px-2 text-[10px] font-bold transition"
+              :class="showHiddenChats ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:bg-slate-700 hover:text-slate-100'"
+              :title="showHiddenChats ? 'Quay lại tin nhắn' : 'Xem cuộc trò chuyện đã ẩn'"
+              @click="showHiddenChats = !showHiddenChats"
+            >
+              <EyeOff class="h-3.5 w-3.5" />
+              {{ hiddenChats.length }}
+            </button>
+            <button
+              class="flex h-7 w-7 items-center justify-center rounded-full text-slate-400 hover:bg-slate-700 hover:text-slate-100 transition"
+              title="Tạo nhóm chat"
+              @click="openGroupModal"
+            >
+              <Users class="h-4 w-4" />
+            </button>
+            <button
+              class="flex h-7 w-7 items-center justify-center rounded-full text-slate-400 hover:bg-slate-700 hover:text-slate-100 transition"
+              title="Nhắn tin mới"
+              @click="openSearch"
+            >
+              <SquarePen class="h-4 w-4" />
+            </button>
+          </div>
         </div>
 
         <!-- Tìm người dùng để nhắn tin mới -->
-        <div v-if="showSearch" class="flex flex-col flex-1 min-h-0 overflow-hidden">
+        <div v-if="showSearch || showGroupModal" class="flex flex-col flex-1 min-h-0 overflow-hidden">
           <div class="p-3 border-b border-slate-800 shrink-0">
+            <div v-if="showGroupModal" class="mb-2 space-y-2">
+              <input
+                v-model="groupName"
+                type="text"
+                placeholder="Tên nhóm chat"
+                class="w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-xs text-slate-100 placeholder-slate-500 focus:border-indigo-500/50 focus:outline-none"
+              >
+              <div v-if="groupMembers.length" class="flex flex-wrap gap-1.5">
+                <button
+                  v-for="member in groupMembers"
+                  :key="member.id"
+                  class="flex items-center gap-1 rounded-full bg-indigo-950/60 px-2 py-1 text-[10px] font-bold text-indigo-200"
+                  @click="toggleGroupMember(member)"
+                >
+                  <span>@{{ member.username }}</span>
+                  <X class="h-3 w-3" />
+                </button>
+              </div>
+            </div>
             <div class="flex items-center gap-2 rounded-xl bg-slate-900 border border-slate-700 px-3 py-2 focus-within:border-indigo-500/50">
               <Search class="h-3.5 w-3.5 text-slate-500 shrink-0" />
               <input
                 v-model="searchQuery"
                 type="text"
-                placeholder="Tìm người dùng..."
+                :placeholder="showGroupModal ? 'Tìm username để thêm vào nhóm...' : 'Tìm người dùng...'"
                 class="flex-1 bg-transparent text-xs text-slate-200 placeholder-slate-500 focus:outline-none"
                 @input="onSearchInput"
-                @keyup.esc="closeSearch"
+                @keyup.esc="showGroupModal ? closeGroupModal() : closeSearch()"
               >
-              <button class="text-slate-500 hover:text-slate-300" @click="closeSearch">
+              <button class="text-slate-500 hover:text-slate-300" @click="showGroupModal ? closeGroupModal() : closeSearch()">
                 <X class="h-3.5 w-3.5" />
               </button>
             </div>
+            <button
+              v-if="showGroupModal"
+              class="mt-2 w-full rounded-xl bg-indigo-600 px-3 py-2 text-xs font-extrabold text-white transition hover:bg-indigo-500 disabled:opacity-40"
+              :disabled="!groupMembers.length"
+              @click="createGroup"
+            >
+              Tạo nhóm chat
+            </button>
           </div>
           <div class="flex-1 overflow-y-auto thin-scrollbar min-h-0">
             <div v-if="searchLoading" class="flex items-center justify-center py-8 text-slate-500 text-xs gap-2">
@@ -513,7 +722,7 @@ onUnmounted(() => {
               v-for="user in searchResults"
               :key="user.id"
               class="flex w-full items-center gap-3 px-4 py-3 text-left hover:bg-slate-800/60 border-b border-slate-800/50 transition"
-              @click="startChatWith(user)"
+              @click="showGroupModal ? toggleGroupMember(user) : startChatWith(user)"
             >
               <img
                 :src="user.avatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=150&q=80'"
@@ -525,25 +734,42 @@ onUnmounted(() => {
                 <p class="text-xs font-semibold text-slate-100 truncate">{{ user.name || user.username }}</p>
                 <p class="text-[10px] text-slate-400 truncate">@{{ user.username }}</p>
               </div>
+              <Check v-if="showGroupModal && groupMembers.some(member => member.id === user.id)" class="h-4 w-4 text-indigo-300" />
             </button>
           </div>
         </div>
 
         <!-- Danh sách hội thoại -->
         <div v-else class="flex-1 overflow-y-auto thin-scrollbar min-h-0">
+          <div v-if="!listedChats.length" class="px-5 py-10 text-center">
+            <p class="text-xs font-bold text-slate-300">
+              {{ showHiddenChats ? 'Chưa có cuộc trò chuyện nào bị ẩn' : 'Chưa có cuộc trò chuyện nào' }}
+            </p>
+            <button
+              v-if="showHiddenChats"
+              class="mt-3 rounded-full bg-slate-800 px-3 py-1.5 text-[11px] font-bold text-slate-200 transition hover:bg-slate-700"
+              @click="showHiddenChats = false"
+            >
+              Quay lại tin nhắn
+            </button>
+          </div>
           <button
-            v-for="chat in chats"
+            v-for="chat in listedChats"
             :key="chat.id"
             class="flex w-full items-center gap-3 px-4 py-3 text-left border-b border-slate-800/50 transition"
             :class="activeChatId === chat.id ? 'bg-indigo-950/30' : 'hover:bg-slate-800/60'"
-            @click="selectChat(chat.id)"
+            @click="showHiddenChats ? unhideChat(chat.id) : selectChat(chat.id)"
           >
             <div class="relative">
               <img :src="chat.targetUser.avatar" :alt="chat.targetUser.name" class="h-11 w-11 rounded-full object-cover" referrerpolicy="no-referrer">
               <span
+                v-if="!chat.isGroup"
                 class="absolute bottom-0 right-0 h-3 w-3 rounded-full ring-2 ring-slate-900 transition-colors"
                 :class="store.isUserOnline(chat.targetUser.id) ? 'bg-emerald-500' : 'bg-slate-600'"
               />
+              <span v-else class="absolute -bottom-0.5 -right-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-indigo-600 ring-2 ring-slate-900">
+                <Users class="h-2.5 w-2.5 text-white" />
+              </span>
             </div>
             <div class="flex-1 overflow-hidden">
               <div class="flex items-center justify-between">
@@ -561,6 +787,28 @@ onUnmounted(() => {
             <span v-if="chat.unreadCount > 0" class="flex h-5 min-w-5 items-center justify-center rounded-full bg-rose-500 px-1.5 text-[10px] font-bold text-white shrink-0">
               {{ chat.unreadCount }}
             </span>
+            <div class="relative shrink-0" data-messenger-popover @click.stop>
+              <button class="flex h-8 w-8 items-center justify-center rounded-full text-slate-500 transition hover:bg-slate-700 hover:text-slate-100" @click="chatActionMenuId = chatActionMenuId === chat.id ? null : chat.id">
+                <MoreVertical class="h-4 w-4" />
+              </button>
+              <div v-if="chatActionMenuId === chat.id" class="absolute right-0 top-full z-30 mt-1 w-44 rounded-2xl border border-slate-700 bg-slate-900 p-1.5 shadow-2xl">
+                <button class="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-xs font-bold text-slate-200 transition hover:bg-slate-800" @click="markRead(chat.id)">
+                  <CheckCheck class="h-4 w-4 text-emerald-400" /> Đánh dấu đã đọc
+                </button>
+                <button class="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-xs font-bold text-slate-200 transition hover:bg-slate-800" @click="markUnread(chat.id)">
+                  <MailOpen class="h-4 w-4 text-indigo-400" /> Đánh dấu chưa đọc
+                </button>
+                <button v-if="!showHiddenChats" class="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-xs font-bold text-slate-200 transition hover:bg-slate-800" @click="hideChat(chat.id)">
+                  <EyeOff class="h-4 w-4 text-amber-400" /> Ẩn cuộc trò chuyện
+                </button>
+                <button v-else class="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-xs font-bold text-slate-200 transition hover:bg-slate-800" @click="unhideChat(chat.id)">
+                  <Eye class="h-4 w-4 text-emerald-400" /> Hiện lại cuộc trò chuyện
+                </button>
+                <button class="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-xs font-bold text-rose-300 transition hover:bg-rose-950/40" @click="deleteChat(chat.id)">
+                  <Trash2 class="h-4 w-4" /> Xóa cuộc trò chuyện
+                </button>
+              </div>
+            </div>
           </button>
         </div>
       </div>
@@ -611,12 +859,24 @@ onUnmounted(() => {
           </div>
 
           <!-- Messages -->
-          <div ref="scrollEl" class="flex-1 overflow-y-auto thin-scrollbar min-h-0 p-4 space-y-3" @click="closePanels" @scroll="onMessagesScroll">
+          <div
+            ref="scrollEl"
+            class="flex-1 overflow-y-auto thin-scrollbar min-h-0 p-4 space-y-3"
+            @click="closePanels"
+            @scroll="onMessagesScroll"
+          >
             <div v-for="msg in activeChat.messages" :key="msg.id">
               <div class="group/msg flex items-end gap-1.5" :class="msg.sender === 'me' ? 'justify-end' : 'justify-start'">
+                <img
+                  v-if="msg.sender === 'them'"
+                  :src="activeChat.targetUser.avatar"
+                  :alt="activeChat.targetUser.name"
+                  class="h-7 w-7 shrink-0 rounded-full object-cover"
+                  referrerpolicy="no-referrer"
+                >
                 <!-- Hành động (trái) cho tin của mình -->
                 <div v-if="msg.sender === 'me' && editingId !== msg.id" class="flex items-center gap-0.5 opacity-0 group-hover/msg:opacity-100 transition self-center">
-                  <div class="relative">
+                  <div class="relative" data-messenger-popover>
                     <button class="flex h-7 w-7 items-center justify-center rounded-full text-slate-500 hover:bg-slate-700 hover:text-slate-200" title="Biểu cảm" @click="reactMenuId = reactMenuId === msg.id ? null : msg.id">
                       <SmilePlus class="h-3.5 w-3.5" />
                     </button>
@@ -650,9 +910,54 @@ onUnmounted(() => {
                   </div>
 
                   <!-- Ảnh / GIF -->
-                  <div v-else-if="(msg.kind === 'image' || msg.kind === 'gif') && msg.image" class="overflow-hidden rounded-2xl border border-slate-700/50">
-                    <img :src="msg.image" alt="Hình ảnh" class="max-w-[230px] w-full object-cover" referrerpolicy="no-referrer">
+                  <div v-else-if="(msg.kind === 'image' || msg.kind === 'gif') && msg.image" class="relative overflow-hidden rounded-2xl border border-slate-700/50 bg-slate-900">
+                    <div v-if="!isMediaLoaded(msg.id)" class="flex h-44 w-[230px] max-w-full items-center justify-center bg-slate-950/70 text-[11px] font-bold text-slate-400">
+                      <span class="mr-2 h-3 w-3 rounded-full border-2 border-slate-500/40 border-t-indigo-400 animate-spin" />
+                      Đang tải ảnh...
+                    </div>
+                    <img
+                      :src="msg.image"
+                      alt="Hình ảnh"
+                      class="max-w-[230px] w-full object-cover transition-opacity duration-150"
+                      :class="isMediaLoaded(msg.id) ? 'opacity-100' : 'absolute inset-0 opacity-0'"
+                      referrerpolicy="no-referrer"
+                      @load="markMediaLoaded(msg.id)"
+                      @error="markMediaLoaded(msg.id)"
+                    >
                     <p class="px-2 py-1 text-[9px] text-right text-slate-400 bg-slate-900/60">{{ timeLabel(msg.createdAt) }}</p>
+                  </div>
+
+                  <!-- Video -->
+                  <div v-else-if="msg.kind === 'video' && msg.image" class="relative overflow-hidden rounded-2xl border border-slate-700/50 bg-slate-950">
+                    <div v-if="!isMediaLoaded(msg.id)" class="flex h-40 w-[260px] max-w-full items-center justify-center bg-slate-950 text-[11px] font-bold text-slate-400">
+                      <span class="mr-2 h-3 w-3 rounded-full border-2 border-slate-500/40 border-t-indigo-400 animate-spin" />
+                      Đang tải video...
+                    </div>
+                    <video
+                      :src="msg.image"
+                      class="block max-h-64 w-[260px] max-w-full bg-black object-contain transition-opacity duration-150"
+                      :class="isMediaLoaded(msg.id) ? 'opacity-100' : 'absolute inset-0 opacity-0'"
+                      controls
+                      playsinline
+                      preload="metadata"
+                      @loadedmetadata="markMediaLoaded(msg.id)"
+                      @error="markMediaLoaded(msg.id)"
+                    />
+                    <p class="px-2 py-1 text-[9px] text-right text-slate-400 bg-slate-900/60">{{ timeLabel(msg.createdAt) }}</p>
+                  </div>
+
+                  <!-- Audio -->
+                  <div
+                    v-else-if="msg.kind === 'audio' && msg.image"
+                    class="min-w-56 rounded-2xl border border-slate-700/50 px-3 py-2.5"
+                    :class="msg.sender === 'me' ? 'bg-indigo-600/90' : 'bg-slate-800'"
+                  >
+                    <div class="mb-2 flex items-center gap-2 text-xs font-bold" :class="msg.sender === 'me' ? 'text-white' : 'text-slate-200'">
+                      <Mic class="h-4 w-4" />
+                      <span>Âm thanh</span>
+                    </div>
+                    <audio :src="msg.image" class="h-9 w-56 max-w-full" controls preload="metadata" @loadedmetadata="markMediaLoaded(msg.id)" />
+                    <p class="mt-1 text-right text-[9px] opacity-60">{{ timeLabel(msg.createdAt) }}</p>
                   </div>
 
                   <!-- Tin nhắn thoại -->
@@ -709,7 +1014,7 @@ onUnmounted(() => {
 
                 <!-- Hành động (phải) cho tin của người khác -->
                 <div v-if="msg.sender === 'them'" class="flex items-center gap-0.5 opacity-0 group-hover/msg:opacity-100 transition self-center">
-                  <div class="relative">
+                  <div class="relative" data-messenger-popover>
                     <button class="flex h-7 w-7 items-center justify-center rounded-full text-slate-500 hover:bg-slate-700 hover:text-slate-200" title="Biểu cảm" @click="reactMenuId = reactMenuId === msg.id ? null : msg.id">
                       <SmilePlus class="h-3.5 w-3.5" />
                     </button>
@@ -724,6 +1029,13 @@ onUnmounted(() => {
                     <Trash2 class="h-3.5 w-3.5" />
                   </button>
                 </div>
+                <img
+                  v-if="msg.sender === 'me'"
+                  :src="currentUser.avatar"
+                  :alt="currentUser.name"
+                  class="h-7 w-7 shrink-0 rounded-full object-cover"
+                  referrerpolicy="no-referrer"
+                >
               </div>
 
               <!-- Trạng thái Đã xem / Đã gửi (dưới tin cuối của mình) -->
@@ -736,11 +1048,11 @@ onUnmounted(() => {
               </div>
             </div>
 
-            <!-- Đang tải ảnh lên S3 -->
+            <!-- Đang tải media lên S3 -->
             <div v-if="isUploading" class="flex justify-end">
               <div class="flex items-center gap-2 rounded-2xl bg-indigo-600/40 px-3.5 py-2 text-xs text-slate-100">
                 <span class="h-3 w-3 rounded-full border-2 border-white/40 border-t-white animate-spin" />
-                Đang tải ảnh lên...
+                Đang tải {{ uploadingLabel }} lên S3...
               </div>
             </div>
 
@@ -759,14 +1071,14 @@ onUnmounted(() => {
           <button
             v-if="showJumpToLatest"
             class="absolute bottom-24 left-1/2 z-30 flex -translate-x-1/2 items-center gap-2 rounded-full border border-indigo-400/40 bg-indigo-600 px-4 py-2 text-xs font-extrabold text-white shadow-2xl shadow-indigo-950/60 transition hover:bg-indigo-500"
-            @click="scrollToBottom"
+            @click="() => scrollToBottom()"
           >
             <ArrowDown class="h-4 w-4" />
             <span>Tin nhắn mới</span>
           </button>
 
           <!-- Bảng sticker / gif -->
-          <div v-if="showStickerPanel" class="shrink-0 border-t border-slate-800 bg-slate-900/60 px-3 pt-2 pb-1">
+          <div v-if="showStickerPanel" class="shrink-0 border-t border-slate-800 bg-slate-900/60 px-3 pt-2 pb-1" data-messenger-popover>
             <div class="flex items-center gap-2 mb-2">
               <button class="rounded-full px-3 py-1 text-[11px] font-bold transition" :class="stickerTab === 'sticker' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-slate-200'" @click="stickerTab = 'sticker'">Nhãn dán</button>
               <button class="rounded-full px-3 py-1 text-[11px] font-bold transition" :class="stickerTab === 'gif' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-slate-200'" @click="stickerTab = 'gif'">GIF</button>
@@ -800,13 +1112,13 @@ onUnmounted(() => {
             <!-- Thanh nhập bình thường -->
             <div v-else class="flex items-center gap-1.5">
               <!-- Menu đính kèm -->
-              <div class="relative shrink-0">
+              <div class="relative shrink-0" data-messenger-popover>
                 <button class="flex h-9 w-9 items-center justify-center rounded-full text-slate-400 hover:bg-slate-800 hover:text-indigo-400 transition" title="Đính kèm" @click="showAttachMenu = !showAttachMenu; showStickerPanel = false">
                   <Plus class="h-5 w-5" />
                 </button>
                 <div v-if="showAttachMenu" class="absolute bottom-full left-0 mb-2 w-44 rounded-2xl border border-slate-700 bg-slate-900 p-1.5 shadow-xl z-30">
-                  <button class="flex w-full items-center gap-2.5 rounded-xl px-3 py-2 text-left text-xs text-slate-200 hover:bg-slate-800 transition" @click="triggerImagePick">
-                    <ImageIcon class="h-4 w-4 text-indigo-400" /> Hình ảnh từ thiết bị
+                  <button class="flex w-full items-center gap-2.5 rounded-xl px-3 py-2 text-left text-xs text-slate-200 hover:bg-slate-800 transition" @click="triggerMediaPick">
+                    <ImageIcon class="h-4 w-4 text-indigo-400" /> Ảnh / video / audio
                   </button>
                   <button class="flex w-full items-center gap-2.5 rounded-xl px-3 py-2 text-left text-xs text-slate-200 hover:bg-slate-800 transition" @click="shareLocation">
                     <MapPin class="h-4 w-4 text-emerald-400" /> Chia sẻ vị trí
@@ -814,10 +1126,10 @@ onUnmounted(() => {
                 </div>
               </div>
 
-              <button class="flex h-9 w-9 items-center justify-center rounded-full text-slate-400 hover:bg-slate-800 hover:text-indigo-400 transition shrink-0" title="Nhãn dán" @click="toggleStickerPanel('sticker')">
+              <button class="flex h-9 w-9 items-center justify-center rounded-full text-slate-400 hover:bg-slate-800 hover:text-indigo-400 transition shrink-0" title="Nhãn dán" data-messenger-popover @click="toggleStickerPanel('sticker')">
                 <Smile class="h-5 w-5" />
               </button>
-              <button class="flex h-9 w-9 items-center justify-center rounded-full text-slate-400 hover:bg-slate-800 hover:text-indigo-400 transition shrink-0" title="GIF" @click="toggleStickerPanel('gif')">
+              <button class="flex h-9 w-9 items-center justify-center rounded-full text-slate-400 hover:bg-slate-800 hover:text-indigo-400 transition shrink-0" title="GIF" data-messenger-popover @click="toggleStickerPanel('gif')">
                 <Film class="h-5 w-5" />
               </button>
 
@@ -842,7 +1154,7 @@ onUnmounted(() => {
               </button>
             </div>
 
-            <input ref="fileInput" type="file" accept="image/*" class="hidden" @change="onFileChange">
+            <input ref="fileInput" type="file" accept="image/*,video/*,audio/*" class="hidden" @change="onFileChange">
           </div>
         </template>
 

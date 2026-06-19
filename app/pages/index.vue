@@ -47,7 +47,7 @@ const showRightBar = computed(() =>
           </div>
         </header>
 
-        <div class="flex-1 flex flex-row items-stretch overflow-hidden">
+        <div class="app-main-layout flex-1 flex flex-row items-stretch overflow-hidden">
           <Sidebar />
 
           <main class="flex-1 flex justify-center pb-24 md:pb-6 h-full overflow-y-auto thin-scrollbar">
