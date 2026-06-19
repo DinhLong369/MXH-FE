@@ -52,8 +52,8 @@ const isRecording = ref(false)
 const recordSeconds = ref(0)
 let recordTimer: ReturnType<typeof setInterval> | null = null
 
-// Gọi video (giả lập)
-const inCall = ref(false)
+// Gọi video
+const inCall = computed(() => !!store.activeCall)
 
 // Menu cuộc hội thoại (xóa)
 const showChatMenu = ref(false)
@@ -575,13 +575,15 @@ function stopRecordingAndSend() {
   pushAttachment('', { kind: 'voice', voiceDuration: secs })
 }
 
-// ---------- Gọi video (giả lập) ----------
+// ---------- Gọi video (WebRTC) ----------
 function startCall() {
+  if (!activeChat.value || !isUuid(activeChat.value.id)) return
   closePanels()
-  inCall.value = true
-}
-function endCall() {
-  inCall.value = false
+  store.startCall(
+    activeChat.value.targetUser.id,
+    activeChat.value.targetUser.name,
+    activeChat.value.targetUser.avatar,
+  )
 }
 
 function fmtDur(s: number): string {
@@ -886,7 +888,7 @@ onUnmounted(() => {
               </p>
             </div>
             <!-- Gọi video -->
-            <button class="flex h-9 w-9 items-center justify-center rounded-full text-indigo-400 hover:bg-indigo-950/40 transition" title="Gọi video" @click="startCall">
+            <button class="flex h-9 w-9 items-center justify-center rounded-full text-indigo-400 hover:bg-indigo-950/40 transition disabled:opacity-40 disabled:cursor-not-allowed" title="Gọi video" :disabled="inCall" @click="startCall">
               <Video class="h-5 w-5" />
             </button>
             <!-- Menu cuộc hội thoại -->
@@ -1260,25 +1262,7 @@ onUnmounted(() => {
           <p class="text-sm">Chọn một cuộc trò chuyện để bắt đầu</p>
         </div>
 
-        <!-- Overlay gọi video (giả lập) -->
-        <div v-if="inCall && activeChat" class="absolute inset-0 z-40 flex flex-col items-center justify-center gap-5 bg-slate-950/95 backdrop-blur">
-          <img :src="activeChat.targetUser.avatar" :alt="activeChat.targetUser.name" class="h-24 w-24 rounded-full object-cover ring-4 ring-indigo-500/30" referrerpolicy="no-referrer">
-          <div class="text-center">
-            <p class="text-base font-bold text-slate-100">{{ activeChat.targetUser.name }}</p>
-            <p class="text-xs text-emerald-400 mt-1 animate-pulse">Đang kết nối cuộc gọi video...</p>
-          </div>
-          <div class="flex items-center gap-4">
-            <div class="flex h-12 w-12 items-center justify-center rounded-full bg-slate-800 text-slate-300">
-              <Video class="h-5 w-5" />
-            </div>
-            <div class="flex h-12 w-12 items-center justify-center rounded-full bg-slate-800 text-slate-300">
-              <Mic class="h-5 w-5" />
-            </div>
-            <button class="flex h-12 w-12 items-center justify-center rounded-full bg-rose-600 text-white hover:bg-rose-500 transition" title="Kết thúc" @click="endCall">
-              <PhoneOff class="h-5 w-5" />
-            </button>
-          </div>
-        </div>
+        <!-- VideoCall overlay (WebRTC) — rendered via index.vue globally -->
       </div>
     </div>
   </div>

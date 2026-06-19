@@ -80,6 +80,44 @@ const showRightBar = computed(() =>
 
       <ThemeSwitcher />
 
+      <!-- Video call overlay (WebRTC) -->
+      <VideoCall v-if="store.activeCall" />
+
+      <!-- Incoming call banner -->
+      <AnimatePresence>
+        <Motion
+          v-if="store.incomingCall"
+          :initial="{ opacity: 0, y: -60 }"
+          :animate="{ opacity: 1, y: 0 }"
+          :exit="{ opacity: 0, y: -60 }"
+          class="fixed top-4 left-1/2 z-[300] -translate-x-1/2 flex items-center gap-3 rounded-2xl border border-slate-700 bg-slate-900/95 px-4 py-3 shadow-2xl backdrop-blur"
+        >
+          <img
+            :src="store.incomingCall.callerAvatar"
+            :alt="store.incomingCall.callerName"
+            class="h-11 w-11 shrink-0 rounded-full object-cover ring-2 ring-indigo-500/40"
+          />
+          <div class="flex-1 min-w-0">
+            <p class="truncate text-sm font-bold text-slate-100">{{ store.incomingCall.callerName }}</p>
+            <p class="text-xs text-slate-400 animate-pulse">Cuộc gọi video đến...</p>
+          </div>
+          <button
+            class="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-emerald-500 text-white hover:bg-emerald-400 transition"
+            title="Nghe máy"
+            @click="store.acceptCall()"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-5 w-5"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07A19.5 19.5 0 0 1 4.69 10.5 19.79 19.79 0 0 1 1.71 1.87a2 2 0 0 1 2-2.18h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 6.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/></svg>
+          </button>
+          <button
+            class="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-rose-600 text-white hover:bg-rose-500 transition"
+            title="Từ chối"
+            @click="store.rejectCall()"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-5 w-5 rotate-135"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07A19.5 19.5 0 0 1 4.69 10.5 19.79 19.79 0 0 1 1.71 1.87a2 2 0 0 1 2-2.18h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 6.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/></svg>
+          </button>
+        </Motion>
+      </AnimatePresence>
+
       <!-- Toast -->
       <AnimatePresence>
         <Motion

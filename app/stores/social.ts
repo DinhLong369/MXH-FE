@@ -196,6 +196,21 @@ function messageTransportContent(msg: Message) {
   return msg.image || msg.text
 }
 
+interface IncomingCall {
+  callerId: string
+  callerName: string
+  callerAvatar: string
+  signal: unknown
+}
+
+interface ActiveCall {
+  targetUserId: string
+  targetName: string
+  targetAvatar: string
+  mode: 'caller' | 'callee'
+  initialSignal?: unknown
+}
+
 interface SocialState {
   currentTab: string
   posts: Post[]
@@ -215,6 +230,9 @@ interface SocialState {
   activeChatInMessenger: string | null
   remoteProfiles: UserProfile[]
   onlineUserIds: string[]
+  incomingCall: IncomingCall | null
+  activeCall: ActiveCall | null
+  callEventQueue: Array<{ type: string; data: unknown }>
 }
 
 export const useSocialStore = defineStore('social', {
@@ -237,6 +255,9 @@ export const useSocialStore = defineStore('social', {
     activeChatInMessenger: null,
     remoteProfiles: [],
     onlineUserIds: [],
+    incomingCall: null,
+    activeCall: null,
+    callEventQueue: [],
   }),
 
   getters: {
@@ -1380,6 +1401,55 @@ export const useSocialStore = defineStore('social', {
       }
     },
 
+    sendWsSignal(type: string, receiverId: string, signal?: unknown) {
+      if (wsConn?.readyState === WebSocket.OPEN) {
+        wsConn.send(JSON.stringify({ type, receiver_id: receiverId, signal }))
+      }
+    },
+
+    startCall(targetUserId: string, targetName: string, targetAvatar: string) {
+      this.activeCall = { targetUserId, targetName, targetAvatar, mode: 'caller' }
+    },
+
+    acceptCall() {
+      if (!this.incomingCall) return
+      this.activeCall = {
+        targetUserId: this.incomingCall.callerId,
+        targetName: this.incomingCall.callerName,
+        targetAvatar: this.incomingCall.callerAvatar,
+        mode: 'callee',
+        initialSignal: this.incomingCall.signal,
+      }
+      this.incomingCall = null
+    },
+
+    rejectCall() {
+      if (this.incomingCall) {
+        this.sendWsSignal('call_reject', this.incomingCall.callerId)
+        this.incomingCall = null
+      }
+    },
+
+    endActiveCall() {
+      if (this.activeCall) {
+        this.sendWsSignal('call_end', this.activeCall.targetUserId)
+        this.activeCall = null
+      }
+      this.callEventQueue = []
+    },
+
+    clearActiveCall() {
+      this.activeCall = null
+      this.callEventQueue = []
+    },
+
+    dequeueCallEvent(): { type: string; data: unknown } | null {
+      if (this.callEventQueue.length === 0) return null
+      const first = this.callEventQueue[0]!
+      this.callEventQueue = this.callEventQueue.slice(1)
+      return first
+    },
+
     handleWsEvent(event: Record<string, unknown>) {
       const type = event.type as string
 
@@ -1509,6 +1579,34 @@ export const useSocialStore = defineStore('social', {
               ? { ...c, targetUser: { ...c.targetUser, lastSeenAt } }
               : c,
           )
+        }
+        return
+      }
+
+      // ── Gọi video: nhận offer từ người gọi ──
+      if (type === 'call_offer') {
+        const data = asRecord(event.data)
+        const callerId = getString(data, ['caller_id'])
+        const chat = this.chats.find((c) => c.targetUser.id === callerId)
+        this.incomingCall = {
+          callerId,
+          callerName: chat?.targetUser.name ?? 'Người dùng',
+          callerAvatar: chat?.targetUser.avatar ?? '',
+          signal: data?.signal,
+        }
+        return
+      }
+
+      // ── Gọi video: relay answer / ICE / end / reject đến VideoCall component ──
+      if (type === 'call_answer' || type === 'call_ice' || type === 'call_end' || type === 'call_reject') {
+        const data = asRecord(event.data)
+        if (type === 'call_end' || type === 'call_reject') {
+          this.callEventQueue = []
+          this.activeCall = null
+          this.incomingCall = null
+        } else {
+          // Push vào queue — KHÔNG ghi đè, tránh mất ICE candidates khi nhiều event đến nhanh
+          this.callEventQueue = [...this.callEventQueue, { type, data: data?.signal ?? null }]
         }
         return
       }
