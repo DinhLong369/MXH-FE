@@ -66,6 +66,8 @@ export interface Post {
   createdAt: string
 }
 
+export type MessageKind = 'text' | 'image' | 'gif' | 'sticker' | 'location' | 'voice'
+
 export interface Message {
   id: string
   chatId: string
@@ -74,6 +76,16 @@ export interface Message {
   createdAt: string
   reaction?: string
   edited?: boolean
+  // Loại tin nhắn (mặc định 'text')
+  kind?: MessageKind
+  // Ảnh / GIF / sticker (data URL hoặc URL ngoài)
+  image?: string
+  // Tin nhắn thoại (giả lập): thời lượng tính bằng giây
+  voiceDuration?: number
+  // Vị trí chia sẻ
+  location?: { label: string; lat?: number; lng?: number }
+  // Đã xem (người nhận đã đọc)
+  seen?: boolean
 }
 
 export interface Chat {

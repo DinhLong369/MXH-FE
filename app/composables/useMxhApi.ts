@@ -8,6 +8,7 @@ import {
   type ForgotPasswordVerifyResponse,
   type LoginRequest,
   type LoginResponse,
+  type MediaUploadResponse,
   type MessageListResponse,
   type RegisterRequest,
   type RegisterResponse,
@@ -29,6 +30,18 @@ function authHeaders(accessToken: string) {
   return {
     Authorization: accessToken.startsWith('Bearer ') ? accessToken : `Bearer ${accessToken}`,
   }
+}
+
+// Lấy URL ảnh từ nhiều shape response khác nhau của backend
+export function extractMediaUrl(res: MediaUploadResponse | undefined): string {
+  if (!res) return ''
+  if (typeof res.url === 'string' && res.url) return res.url
+  const data = res.data
+  if (typeof data === 'string') return data
+  if (data && typeof data === 'object') {
+    return data.url || data.location || data.path || ''
+  }
+  return ''
 }
 
 export function useMxhApi() {
@@ -145,6 +158,21 @@ export function useMxhApi() {
           method: endpoint.method,
           headers: authHeaders(accessToken),
           query,
+        })
+      },
+    },
+
+    media: {
+      // Upload ảnh lên S3. Không tự set Content-Type để trình duyệt tự thêm
+      // boundary cho multipart/form-data.
+      upload(accessToken: string, file: File, fieldName = 'file') {
+        const endpoint = MXH_API_ENDPOINTS.media.upload
+        const form = new FormData()
+        form.append(fieldName, file)
+        return request<MediaUploadResponse>(endpoint.path, {
+          method: endpoint.method,
+          headers: authHeaders(accessToken),
+          body: form,
         })
       },
     },

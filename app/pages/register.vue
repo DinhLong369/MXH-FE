@@ -42,7 +42,12 @@ async function verify() {
   isSubmitting.value = true
   try {
     const res = await auth.finalizeRegisterWithApi(form, otpCode.value)
-    if (res.ok) setTimeout(() => navigateTo('/'), 800)
+    if (res.ok) {
+      // Không tự đăng nhập: chuyển sang màn login và điền sẵn tk/mk vừa đăng ký
+      auth.setPrefillLogin(form.username.trim() || form.email.trim(), form.password)
+      auth.logout()
+      setTimeout(() => navigateTo('/login'), 800)
+    }
   } finally {
     isSubmitting.value = false
   }

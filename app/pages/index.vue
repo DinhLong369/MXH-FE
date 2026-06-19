@@ -26,16 +26,16 @@ const showRightBar = computed(() =>
     <ClientOnly>
       <div class="h-screen w-full max-w-7xl mx-auto flex flex-col relative z-10 overflow-hidden">
         <!-- Top search bar (kiểu Facebook) -->
-        <header class="relative z-50 shrink-0 flex items-center justify-center gap-3 px-4 py-2.5">
-          <div class="absolute left-4 flex md:hidden items-center gap-2 shrink-0">
-            <div class="flex h-8 w-8 items-center justify-center rounded-xl  from-indigo-500 to-violet-600">
+        <header class="relative z-50 shrink-0 flex items-center gap-3 px-4 py-2.5 backdrop-glass">
+          <div class="flex md:hidden items-center gap-2 shrink-0">
+            <div class="flex h-8 w-8 items-center justify-center rounded-xl bg-gradient-to-br from-indigo-500 to-violet-600">
               <span class="text-white font-extrabold text-sm">L</span>
             </div>
           </div>
           <SearchBar />
         </header>
 
-        <div class="app-main-layout flex-1 flex flex-row items-stretch overflow-hidden">
+        <div class="flex-1 flex flex-row items-stretch overflow-hidden">
           <Sidebar />
 
           <main class="flex-1 flex justify-center pb-24 md:pb-6 h-full overflow-y-auto thin-scrollbar">

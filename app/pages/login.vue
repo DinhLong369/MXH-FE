@@ -11,7 +11,14 @@ const isSubmitting = ref(false)
 onMounted(() => {
   auth.loadAccounts()
   auth.resetFlow()
-  username.value = rememberedLogins.value[0] || ''
+  // Nếu vừa đăng ký xong → điền sẵn tài khoản/mật khẩu vừa nhập
+  const prefill = auth.consumePrefillLogin()
+  if (prefill) {
+    username.value = prefill.account
+    password.value = prefill.password
+  } else {
+    username.value = rememberedLogins.value[0] || ''
+  }
 })
 
 async function submit() {

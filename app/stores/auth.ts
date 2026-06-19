@@ -140,6 +140,7 @@ interface AuthState {
   forgotPasswordToken: string
   isUsingApiOtp: boolean
   loaded: boolean
+  prefillLogin: { account: string; password: string } | null
 }
 
 let timerHandle: ReturnType<typeof setInterval> | null = null
@@ -157,6 +158,7 @@ export const useAuthStore = defineStore('auth', {
     forgotPasswordToken: '',
     isUsingApiOtp: false,
     loaded: false,
+    prefillLogin: null,
   }),
 
   actions: {
@@ -211,6 +213,16 @@ export const useAuthStore = defineStore('auth', {
       } catch {
         return ''
       }
+    },
+
+    // ----- Prefill đăng nhập (sau khi đăng ký xong) -----
+    setPrefillLogin(account: string, password: string) {
+      this.prefillLogin = { account, password }
+    },
+    consumePrefillLogin(): { account: string; password: string } | null {
+      const data = this.prefillLogin
+      this.prefillLogin = null
+      return data
     },
 
     // ----- Feedback -----
@@ -292,6 +304,9 @@ export const useAuthStore = defineStore('auth', {
       if (import.meta.client) {
         localStorage.setItem(LS_USER, JSON.stringify(user))
         localStorage.setItem(LS_AUTHED, 'true')
+        // Đồng bộ ngay user mới sang social store (tránh hiển thị tài khoản cũ
+        // khi điều hướng SPA mà store đã hydrate từ phiên trước)
+        useSocialStore().syncCurrentUser()
       }
     },
     logout() {

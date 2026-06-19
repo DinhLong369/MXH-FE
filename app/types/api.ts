@@ -54,6 +54,12 @@ export const MXH_API_ENDPOINTS = {
       path: (id: string) => `/api/conversations/${encodeURIComponent(id)}/messages.json`,
     },
   },
+  media: {
+    upload: {
+      method: 'POST',
+      path: '/api/media/upload.json',
+    },
+  },
 } as const
 
 export type ApiMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE'
@@ -141,6 +147,7 @@ export interface ConversationMessagesQuery {
   limit?: number
 }
 
+// ----- Tìm kiếm người dùng -----
 export interface SearchUsersQuery {
   q: string
 }
@@ -155,4 +162,19 @@ export interface ApiUserResult {
 
 export interface SearchUsersResponse extends ApiMessageResponse {
   data: ApiUserResult[]
+}
+
+// ----- Media -----
+// Backend trả về URL ảnh đã upload lên S3. Shape có thể khác nhau giữa các
+// phiên bản API nên giữ linh hoạt và dùng extractMediaUrl() để lấy URL.
+export interface MediaUploadData {
+  url?: string
+  path?: string
+  location?: string
+  key?: string
+}
+
+export interface MediaUploadResponse extends ApiMessageResponse {
+  url?: string
+  data?: MediaUploadData | string
 }

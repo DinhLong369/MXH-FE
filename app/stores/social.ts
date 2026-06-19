@@ -27,7 +27,10 @@ const LS = {
   notifs: 'vs_notifications',
   chats: 'vs_chats',
   groups: 'vs_groups',
+  tab: 'vs_currentTab',
 }
+
+const VALID_TABS = ['home', 'explore', 'messenger', 'notifications', 'profile']
 
 function readLS<T>(key: string): T | null {
   if (!import.meta.client) return null
@@ -61,6 +64,17 @@ function getArray(value: unknown): unknown[] {
   const record = asRecord(value)
   const nested = record?.items || record?.conversations || record?.messages || record?.data
   return Array.isArray(nested) ? nested : []
+}
+
+// Nếu nội dung tin nhắn là 1 URL ảnh (gửi qua S3) thì nhận diện loại để render ảnh
+// thay vì hiển thị link text.
+function detectMediaKind(text: string): 'image' | 'gif' | null {
+  const t = text.trim()
+  if (!/^https?:\/\/\S+$/i.test(t)) return null
+  const clean = t.split('?')[0]!.toLowerCase()
+  if (clean.endsWith('.gif')) return 'gif'
+  if (/\.(jpe?g|png|webp|avif|bmp|svg)$/.test(clean)) return 'image'
+  return null
 }
 
 interface SocialState {
@@ -222,7 +236,25 @@ export const useSocialStore = defineStore('social', {
         writeLS(LS.groups, GROUPS)
       }
 
+      // G. Tab đang mở (reload thì giữ nguyên trang)
+      const savedTab = import.meta.client ? localStorage.getItem(LS.tab) : null
+      if (savedTab && VALID_TABS.includes(savedTab)) this.currentTab = savedTab
+
       this.hydrated = true
+    },
+
+    // Đọc lại user hiện tại từ localStorage (sau khi login/register đổi tài khoản).
+    // hydrate() bị chốt `hydrated` nên không tự cập nhật khi điều hướng SPA.
+    syncCurrentUser() {
+      if (!import.meta.client) return
+      const localUser = readLS<UserProfile>(LS.user)
+      if (localUser && localUser.id !== this.currentUser.id) {
+        this.currentUser = localUser
+        // Đổi tài khoản → bỏ trạng thái đang xem hồ sơ người khác
+        this.viewingUserId = null
+      } else if (localUser) {
+        this.currentUser = localUser
+      }
     },
 
     seedChats(): Chat[] {
@@ -319,11 +351,50 @@ export const useSocialStore = defineStore('social', {
     // ========================================================
     setTab(tab: string) {
       this.currentTab = tab
+      if (import.meta.client) localStorage.setItem(LS.tab, tab)
       // Reset hồ sơ đang xem khi điều hướng (vào tab profile = xem bản thân)
       this.viewingUserId = null
-      if (tab !== 'messenger') {
-        // Rời messenger → clear active chat
-        this.activeChatInMessenger = null
+      // Vào messenger thì xóa badge chưa đọc + xin quyền thông báo thiết bị
+      if (tab === 'messenger') {
+        this.saveChats(this.chats.map((c) => ({ ...c, unreadCount: 0 })))
+        this.ensureNotificationPermission()
+      }
+    },
+
+    // Xin quyền hiển thị thông báo kiểu thiết bị (gọi từ thao tác người dùng)
+    ensureNotificationPermission() {
+      if (
+        import.meta.client &&
+        typeof Notification !== 'undefined' &&
+        Notification.permission === 'default'
+      ) {
+        Notification.requestPermission().catch(() => {})
+      }
+    },
+
+    // Bắn thông báo hệ thống (OS/trình duyệt) khi có tin nhắn mới
+    pushDeviceNotification(opts: { title: string; body: string; icon?: string; tag?: string }) {
+      if (import.meta.client) this.showToast(`💬 ${opts.title}: ${opts.body.slice(0, 60)}`)
+      if (
+        !import.meta.client ||
+        typeof Notification === 'undefined' ||
+        Notification.permission !== 'granted'
+      ) {
+        return
+      }
+      try {
+        const notif = new Notification(opts.title, {
+          body: opts.body,
+          icon: opts.icon,
+          tag: opts.tag,
+        })
+        notif.onclick = () => {
+          window.focus()
+          this.setTab('messenger')
+          notif.close()
+        }
+      } catch {
+        // một số trình duyệt yêu cầu ServiceWorkerRegistration.showNotification — bỏ qua
       }
     },
 
@@ -750,11 +821,14 @@ export const useSocialStore = defineStore('social', {
       const auth = useAuthStore()
       const myId = auth.getApiUserId()
       const isMine = senderId !== '' && (senderId === myId || senderId === this.currentUser.id)
+      const mediaKind = detectMediaKind(text)
       return {
         id,
         chatId,
         sender: isMine ? 'me' : 'them',
-        text,
+        text: mediaKind ? '' : text,
+        kind: mediaKind || undefined,
+        image: mediaKind ? text : undefined,
         createdAt: getString(item, ['created_at', 'updated_at'], new Date().toISOString()),
       }
     },
@@ -779,6 +853,15 @@ export const useSocialStore = defineStore('social', {
 
         const chatsWithMessages = await Promise.all(
           apiChats.map(async (chat) => {
+            // Giữ trạng thái đã đọc cục bộ: WS + markChatRead đã quản lý unread realtime,
+            // nên không để unread_count cũ từ server "hồi sinh" badge đã đọc.
+            const existing = this.chats.find((c) => c.id === chat.id)
+            const merged = {
+              ...chat,
+              messages: existing?.messages.length ? existing.messages : chat.messages,
+              unreadCount: existing ? existing.unreadCount : chat.unreadCount,
+              lastSeenAt: existing?.lastSeenAt ?? chat.lastSeenAt,
+            }
             try {
               const messages = await api.chat.listConversationMessages(accessToken, chat.id, {
                 page: 1,
@@ -788,17 +871,17 @@ export const useSocialStore = defineStore('social', {
                 .map((item) => this.mapApiMessage(item, chat.id))
                 .filter((message): message is Message => Boolean(message))
                 .reverse() // API trả về DESC (mới→cũ), reverse để hiển thị đúng cũ→mới
-              if (!apiMessages.length) return chat
+              if (!apiMessages.length) return merged
               const last = apiMessages[apiMessages.length - 1]
               return {
-                ...chat,
+                ...merged,
                 messages: apiMessages,
-                lastMessage: last?.text || chat.lastMessage,
-                lastMessageTime: last ? 'Vừa xong' : chat.lastMessageTime,
+                lastMessage: last?.text || merged.lastMessage,
+                lastMessageTime: last ? 'Vừa xong' : merged.lastMessageTime,
               }
             } catch (error) {
               console.warn('Cannot load API messages:', error)
-              return chat
+              return merged
             }
           }),
         )
@@ -809,30 +892,62 @@ export const useSocialStore = defineStore('social', {
       }
     },
 
-    sendMessage(chatId: string, text: string) {
+    sendMessage(chatId: string, text: string, extra: Partial<Message> = {}) {
       const msg: Message = {
         id: `msg-${Date.now()}`,
         chatId,
         sender: 'me',
         text,
         createdAt: new Date().toISOString(),
+        ...extra,
       }
+      // Nhãn hiển thị trong danh sách chat theo loại tin
+      const preview =
+        text ||
+        (msg.kind === 'image'
+          ? '📷 Hình ảnh'
+          : msg.kind === 'gif'
+            ? 'GIF'
+            : msg.kind === 'sticker'
+              ? 'Nhãn dán'
+              : msg.kind === 'voice'
+                ? '🎤 Tin nhắn thoại'
+                : msg.kind === 'location'
+                  ? '📍 Vị trí'
+                  : '')
       this.saveChats(
         this.chats.map((c) =>
           c.id === chatId
-            ? { ...c, messages: [...c.messages, msg], lastMessage: text, lastMessageTime: 'Vừa xong' }
+            ? { ...c, messages: [...c.messages, msg], lastMessage: preview, lastMessageTime: 'Vừa xong' }
             : c,
         ),
       )
 
-      // Send via WebSocket for real API conversations
+      // Gửi qua WebSocket cho hội thoại thật (API). Ảnh đã upload S3 nên gửi URL,
+      // còn lại gửi text (sticker gửi emoji).
       if (isUuidFormat(chatId) && wsConn?.readyState === WebSocket.OPEN) {
         wsConn.send(JSON.stringify({
           type: 'send_message',
           conversation_id: chatId,
-          content: text,
+          content: msg.image || text,
         }))
       }
+    },
+
+    // Đánh dấu mọi tin nhắn của mình trong cuộc trò chuyện là "đã xem"
+    markChatSeen(chatId: string) {
+      this.saveChats(
+        this.chats.map((c) =>
+          c.id !== chatId
+            ? c
+            : {
+                ...c,
+                messages: c.messages.map((m) =>
+                  m.sender === 'me' && !m.seen ? { ...m, seen: true } : m,
+                ),
+              },
+        ),
+      )
     },
 
     receiveBotReply(chatId: string, replyText: string) {
@@ -849,7 +964,11 @@ export const useSocialStore = defineStore('social', {
           c.id === chatId
             ? {
                 ...c,
-                messages: [...c.messages, botMessage],
+                // Bot phản hồi ⇒ coi như đã xem hết tin của mình
+                messages: [
+                  ...c.messages.map((m) => (m.sender === 'me' && !m.seen ? { ...m, seen: true } : m)),
+                  botMessage,
+                ],
                 lastMessage: replyText,
                 lastMessageTime: 'Vừa xong',
                 unreadCount: isInChatTab ? 0 : c.unreadCount + 1,
@@ -858,21 +977,31 @@ export const useSocialStore = defineStore('social', {
         ),
       )
 
-      if (!isInChatTab) {
+      // Thông báo khi không ở trong cuộc trò chuyện, hoặc app đang chạy nền
+      const appHidden = import.meta.client && document.hidden
+      if (!isInChatTab || appHidden) {
         const activeChat = this.chats.find((c) => c.id === chatId)
         if (activeChat) {
-          this.saveNotifs([
-            {
-              id: `notif-dm-${Date.now()}`,
-              type: 'system',
-              senderName: activeChat.targetUser.name,
-              senderAvatar: activeChat.targetUser.avatar,
-              message: `vừa gửi cho bạn một tin nhắn trực tiếp mới: "${replyText.slice(0, 30)}..."`,
-              read: false,
-              createdAt: new Date().toISOString(),
-            },
-            ...this.notifications,
-          ])
+          if (!isInChatTab) {
+            this.saveNotifs([
+              {
+                id: `notif-dm-${Date.now()}`,
+                type: 'system',
+                senderName: activeChat.targetUser.name,
+                senderAvatar: activeChat.targetUser.avatar,
+                message: `vừa gửi cho bạn một tin nhắn trực tiếp mới: "${replyText.slice(0, 30)}..."`,
+                read: false,
+                createdAt: new Date().toISOString(),
+              },
+              ...this.notifications,
+            ])
+          }
+          this.pushDeviceNotification({
+            title: activeChat.targetUser.name,
+            body: replyText,
+            icon: activeChat.targetUser.avatar,
+            tag: chatId,
+          })
         }
       }
     },
