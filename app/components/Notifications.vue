@@ -37,7 +37,7 @@ function openTarget(targetPostId?: string) {
 </script>
 
 <template>
-  <div class="flex-1 max-w-2xl w-full px-4 py-6 md:px-0">
+  <div class="flex-1 max-w-2xl w-full px-3 py-4 md:px-0 md:py-6">
     <div class="flex items-center justify-between mb-6">
       <div class="flex items-center gap-2">
         <Bell class="h-6 w-6 text-indigo-400" />

@@ -78,7 +78,7 @@ function react(postId: string, type: ReactionType) {
 </script>
 
 <template>
-  <div class="flex-1 max-w-2xl px-4 py-6 md:px-0 w-full">
+  <div class="flex-1 max-w-2xl px-3 py-4 md:px-0 md:py-6 w-full">
     <!-- Header / filter -->
     <div class="mb-6 flex items-center justify-between">
       <h2 class="text-lg font-bold text-slate-100 uppercase tracking-tight">
@@ -188,18 +188,18 @@ function react(postId: string, type: ReactionType) {
           </div>
 
           <!-- Actions -->
-          <div class="flex items-center justify-between border-t border-slate-800 pt-2">
-            <div class="relative">
+          <div class="flex items-center border-t border-slate-800 pt-1">
+            <!-- Like -->
+            <div class="relative flex-1">
               <button
-                class="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition"
+                class="flex w-full items-center justify-center gap-1 sm:gap-1.5 rounded-lg px-1.5 sm:px-3 py-2 text-xs font-semibold transition"
                 :class="post.isLiked ? 'text-indigo-400 bg-indigo-950/30' : 'text-slate-400 hover:bg-slate-800'"
                 @click="store.likePost(post.id, post.myReaction)"
                 @mouseenter="activeReactionMenu = post.id"
               >
                 <span class="text-base leading-none">{{ reactionIcon(post) }}</span>
-                <span>{{ post.isLiked ? reactionEmojis.find(r => r.type === post.myReaction)?.label : 'Thích' }}</span>
+                <span class="hidden sm:inline">{{ post.isLiked ? reactionEmojis.find(r => r.type === post.myReaction)?.label : 'Thích' }}</span>
               </button>
-
               <AnimatePresence>
                 <Motion
                   v-if="activeReactionMenu === post.id"
@@ -215,30 +215,34 @@ function react(postId: string, type: ReactionType) {
                     :title="r.label"
                     class="text-2xl transition hover:scale-125"
                     @click="react(post.id, r.type)"
-                  >
-                    {{ r.icon }}
-                  </button>
+                  >{{ r.icon }}</button>
                 </Motion>
               </AnimatePresence>
             </div>
 
-            <button class="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold text-slate-400 hover:bg-slate-800 transition" @click="expandedComments[post.id] = !expandedComments[post.id]">
-              <MessageCircle class="h-4 w-4" />
-              <span>Bình luận</span>
-            </button>
-
-            <button class="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold text-slate-400 hover:bg-slate-800 transition" @click="share(post.id)">
-              <Share2 class="h-4 w-4" />
-              <span>Chia sẻ</span>
+            <button
+              class="flex flex-1 items-center justify-center gap-1 sm:gap-1.5 rounded-lg px-1.5 sm:px-3 py-2 text-xs font-semibold text-slate-400 hover:bg-slate-800 transition"
+              @click="expandedComments[post.id] = !expandedComments[post.id]"
+            >
+              <MessageCircle class="h-4 w-4 shrink-0" />
+              <span class="hidden sm:inline">Bình luận</span>
             </button>
 
             <button
-              class="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition"
+              class="flex flex-1 items-center justify-center gap-1 sm:gap-1.5 rounded-lg px-1.5 sm:px-3 py-2 text-xs font-semibold text-slate-400 hover:bg-slate-800 transition"
+              @click="share(post.id)"
+            >
+              <Share2 class="h-4 w-4 shrink-0" />
+              <span class="hidden sm:inline">Chia sẻ</span>
+            </button>
+
+            <button
+              class="flex flex-1 items-center justify-center gap-1 sm:gap-1.5 rounded-lg px-1.5 sm:px-3 py-2 text-xs font-semibold transition"
               :class="post.isSaved ? 'text-amber-400 bg-amber-950/20' : 'text-slate-400 hover:bg-slate-800'"
               @click="store.savePost(post.id)"
             >
-              <Bookmark class="h-4 w-4" :class="post.isSaved ? 'fill-amber-400' : ''" />
-              <span>Lưu</span>
+              <Bookmark class="h-4 w-4 shrink-0" :class="post.isSaved ? 'fill-amber-400' : ''" />
+              <span class="hidden sm:inline">Lưu</span>
             </button>
           </div>
 

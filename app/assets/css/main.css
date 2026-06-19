@@ -6,8 +6,10 @@
 
 @layer base {
   html {
-    /* Tăng cỡ chữ gốc → toàn bộ text/spacing theo rem lớn hơn ~6% */
-    font-size: 17px;
+    /* Responsive font size: nhỏ hơn trên mobile để tránh overflow */
+    font-size: 15px;
+    @screen md { font-size: 16px; }
+    @screen lg { font-size: 17px; }
     font-family: 'Plus Jakarta Sans', system-ui, sans-serif;
     scroll-behavior: smooth;
     color-scheme: dark;
@@ -381,6 +383,16 @@ html[data-theme='daylight'] .app-shell .app-search-dropdown button:hover {
 .app-shell .app-main-layout > main.thin-scrollbar::-webkit-scrollbar {
   width: 0;
   height: 0;
+}
+
+/* Safe area inset cho iPhone notch/home bar */
+.safe-area-inset-bottom {
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+/* Viewport height fix cho mobile browser (thanh địa chỉ ẩn/hiện) */
+.h-screen-mobile {
+  height: 100dvh;
 }
 
 .card-shine-hover {

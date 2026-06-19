@@ -32,15 +32,19 @@ const showRightBar = computed(() =>
     <div v-if="isGlobalLoading" class="fixed top-0 left-0 right-0 z-50 h-1 bg-gradient-to-r from-indigo-500 via-orange-500 to-violet-500 animate-pulse" />
 
     <ClientOnly>
-      <div class="h-screen w-full max-w-7xl mx-auto flex flex-col relative z-10 overflow-hidden">
-        <!-- Top search bar (kiểu Facebook) -->
-        <header class="relative z-50 shrink-0 flex items-center justify-center gap-3 px-4 py-2.5">
-          <div class="absolute left-4 flex md:hidden items-center gap-2 shrink-0">
+      <div class="h-[100dvh] w-full max-w-7xl mx-auto flex flex-col relative z-10 overflow-hidden">
+        <!-- Top search bar -->
+        <header class="relative z-50 shrink-0 flex items-center gap-3 px-3 py-2 md:px-4 md:py-2.5 border-b border-slate-800/40">
+          <!-- Logo mobile -->
+          <div class="flex md:hidden items-center gap-2 shrink-0">
             <div class="flex h-8 w-8 items-center justify-center rounded-xl bg-gradient-to-br from-indigo-500 to-violet-600">
               <span class="text-white font-extrabold text-sm">L</span>
             </div>
           </div>
-          <SearchBar />
+          <!-- Search bar: full-width on mobile, centered on desktop -->
+          <div class="flex-1 flex justify-center">
+            <SearchBar />
+          </div>
         </header>
 
         <div class="flex-1 flex flex-row items-stretch overflow-hidden">

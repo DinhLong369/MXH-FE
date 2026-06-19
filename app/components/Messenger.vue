@@ -464,8 +464,8 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="w-full max-w-5xl mx-auto h-full p-2 md:p-4 flex">
-    <div class="flex flex-1 min-h-0 overflow-hidden rounded-3xl border border-slate-800 bg-slate-800/40">
+  <div class="w-full max-w-5xl mx-auto h-full p-0 md:p-4 flex">
+    <div class="flex flex-1 min-h-0 overflow-hidden md:rounded-3xl border-0 md:border border-slate-800 bg-slate-800/40">
       <!-- Chat list -->
       <div
         class="w-full md:w-72 shrink-0 border-r border-slate-800 flex-col min-h-0"

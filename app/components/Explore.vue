@@ -18,7 +18,7 @@ const imagePosts = computed(() => posts.value.filter((p) => p.imageUrl))
 </script>
 
 <template>
-  <div class="flex-1 max-w-4xl px-4 py-6 md:px-0 w-full">
+  <div class="flex-1 max-w-4xl px-3 py-4 md:px-0 md:py-6 w-full">
     <div class="flex items-center gap-2 mb-6">
       <Compass class="h-6 w-6 text-indigo-400" />
       <h2 class="text-lg font-bold text-slate-100 uppercase tracking-tight">Khám phá</h2>

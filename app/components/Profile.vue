@@ -134,7 +134,7 @@ function relTime(iso: string): string {
 </script>
 
 <template>
-  <div class="flex-1 max-w-3xl w-full px-4 py-6 md:px-0">
+  <div class="flex-1 max-w-3xl w-full px-3 py-4 md:px-0 md:py-6">
     <!-- Nút quay lại khi đang xem hồ sơ người khác -->
     <button v-if="!isViewingSelf" class="mb-4 flex items-center gap-1.5 text-xs font-semibold text-slate-400 hover:text-slate-100 transition" @click="store.setTab('home')">
       <ArrowLeft class="h-4 w-4" />
@@ -143,24 +143,33 @@ function relTime(iso: string): string {
 
     <!-- Cover + avatar -->
     <div class="rounded-3xl border border-slate-800 bg-slate-800/40">
-      <div class="relative h-40 overflow-hidden rounded-t-3xl md:h-52">
+      <div class="relative h-28 overflow-hidden rounded-t-3xl sm:h-40 md:h-52">
         <img :src="viewedUser.cover" alt="cover" class="h-full w-full object-cover" referrerpolicy="no-referrer">
         <div class="absolute inset-0 bg-gradient-to-t from-slate-900/80 to-transparent" />
       </div>
-      <div class="px-5 pb-5">
-        <div class="flex items-end justify-between -mt-12">
-          <img :src="viewedUser.avatar" :alt="viewedUser.name" class="relative z-10 h-24 w-24 rounded-2xl object-cover ring-4 ring-slate-900 shadow-xl" referrerpolicy="no-referrer">
-
-          <!-- Hành động: tự mình → sửa; người khác → theo dõi + nhắn tin -->
-          <div class="flex items-center gap-2">
-            <button v-if="isViewingSelf" class="flex items-center gap-1.5 rounded-xl border border-slate-700 bg-slate-800 hover:bg-slate-700 px-3.5 py-2 text-xs font-bold text-slate-200 transition" @click="openEdit">
+      <div class="px-4 pb-4 md:px-5 md:pb-5">
+        <div class="flex items-end justify-between -mt-10 sm:-mt-12">
+          <img
+            :src="viewedUser.avatar"
+            :alt="viewedUser.name"
+            class="relative z-10 h-20 w-20 sm:h-24 sm:w-24 rounded-2xl object-cover ring-4 ring-slate-900 shadow-xl"
+            referrerpolicy="no-referrer"
+          >
+          <!-- Hành động -->
+          <div class="flex flex-wrap items-center gap-2 pb-1">
+            <button
+              v-if="isViewingSelf"
+              class="flex items-center gap-1.5 rounded-xl border border-slate-700 bg-slate-800 hover:bg-slate-700 px-3 py-2 text-xs font-bold text-slate-200 transition"
+              @click="openEdit"
+            >
               <Pencil class="h-3.5 w-3.5" />
-              <span>Chỉnh sửa hồ sơ</span>
+              <span class="hidden sm:inline">Chỉnh sửa hồ sơ</span>
+              <span class="sm:hidden">Sửa</span>
             </button>
             <template v-else>
               <button
                 v-if="viewedBot"
-                class="flex items-center gap-1.5 rounded-xl px-3.5 py-2 text-xs font-bold transition"
+                class="flex items-center gap-1.5 rounded-xl px-3 py-2 text-xs font-bold transition"
                 :class="viewedBot.isFollowed ? 'bg-slate-800 text-slate-300 border border-slate-700' : 'bg-indigo-600 hover:bg-indigo-500 text-white'"
                 @click="store.toggleFollow(viewedBot.id)"
               >
@@ -168,17 +177,20 @@ function relTime(iso: string): string {
                 <UserPlus v-else class="h-3.5 w-3.5" />
                 <span>{{ viewedBot.isFollowed ? 'Đang theo dõi' : 'Theo dõi' }}</span>
               </button>
-              <button class="flex items-center gap-1.5 rounded-xl border border-slate-700 bg-slate-800 hover:bg-slate-700 px-3.5 py-2 text-xs font-bold text-slate-200 transition" @click="messageUser">
+              <button
+                class="flex items-center gap-1.5 rounded-xl border border-slate-700 bg-slate-800 hover:bg-slate-700 px-3 py-2 text-xs font-bold text-slate-200 transition"
+                @click="messageUser"
+              >
                 <MessageCircle class="h-3.5 w-3.5" />
                 <span>Nhắn tin</span>
               </button>
             </template>
           </div>
         </div>
-        <h2 class="mt-3 text-xl font-extrabold text-slate-100">{{ viewedUser.name }}</h2>
+        <h2 class="mt-2 text-lg sm:text-xl font-extrabold text-slate-100">{{ viewedUser.name }}</h2>
         <p class="text-xs text-slate-500">@{{ viewedUser.username }}</p>
         <p class="mt-2 text-sm text-slate-300 leading-relaxed">{{ viewedUser.bio }}</p>
-        <div class="mt-3 flex gap-5 text-xs">
+        <div class="mt-3 flex flex-wrap gap-4 text-xs">
           <span class="text-slate-400"><b class="text-slate-100">{{ profilePosts.length }}</b> bài viết</span>
           <span class="text-slate-400"><b class="text-slate-100">{{ viewedUser.followersCount.toLocaleString() }}</b> người theo dõi</span>
           <span class="text-slate-400"><b class="text-slate-100">{{ viewedUser.followingCount }}</b> đang theo dõi</span>
