@@ -32,6 +32,7 @@ const LS_USER = 'vs_currentUser'
 const LS_AUTHED = 'vs_isAuthenticated'
 const LS_ACCESS_TOKEN = 'vs_access_token'
 const LS_REFRESH_TOKEN = 'vs_refresh_token'
+const LS_REMEMBERED_LOGINS = 'vs_remembered_logins'
 
 const DEFAULT_ACCOUNTS: StoredAccount[] = [
   {
@@ -129,6 +130,7 @@ function getErrorMessage(error: unknown, fallback: string) {
 
 interface AuthState {
   accounts: StoredAccount[]
+  rememberedLogins: string[]
   feedback: { text: string; type: FeedbackType }
   simulatedEmail: SimulatedEmail | null
   otpSentCode: string
@@ -145,6 +147,7 @@ let timerHandle: ReturnType<typeof setInterval> | null = null
 export const useAuthStore = defineStore('auth', {
   state: (): AuthState => ({
     accounts: [],
+    rememberedLogins: [],
     feedback: { text: '', type: '' },
     simulatedEmail: null,
     otpSentCode: '',
@@ -167,11 +170,22 @@ export const useAuthStore = defineStore('auth', {
         localStorage.setItem(LS_ACCOUNTS, JSON.stringify(DEFAULT_ACCOUNTS))
         this.accounts = DEFAULT_ACCOUNTS
       }
+      const remembered = localStorage.getItem(LS_REMEMBERED_LOGINS)
+      this.rememberedLogins = remembered ? JSON.parse(remembered) : []
       this.loaded = true
     },
 
     persistAccounts() {
       if (import.meta.client) localStorage.setItem(LS_ACCOUNTS, JSON.stringify(this.accounts))
+    },
+
+    rememberLogin(account: string) {
+      if (!import.meta.client) return
+      const cleaned = account.trim()
+      if (!cleaned) return
+      const next = [cleaned, ...this.rememberedLogins.filter((item) => item !== cleaned)].slice(0, 5)
+      this.rememberedLogins = next
+      localStorage.setItem(LS_REMEMBERED_LOGINS, JSON.stringify(next))
     },
 
     setApiTokens(tokens: Pick<LoginResponse, 'access_token' | 'refresh_token'>) {
@@ -256,12 +270,22 @@ export const useAuthStore = defineStore('auth', {
 
     // ----- Session -----
     setSession(user: UserProfile) {
+      const authCookie = useCookie(LS_AUTHED, {
+        sameSite: 'lax',
+        path: '/',
+      })
+      authCookie.value = 'true'
       if (import.meta.client) {
         localStorage.setItem(LS_USER, JSON.stringify(user))
         localStorage.setItem(LS_AUTHED, 'true')
       }
     },
     logout() {
+      const authCookie = useCookie<string | null>(LS_AUTHED, {
+        sameSite: 'lax',
+        path: '/',
+      })
+      authCookie.value = null
       if (import.meta.client) {
         localStorage.removeItem(LS_AUTHED)
         localStorage.removeItem(LS_ACCESS_TOKEN)
@@ -297,6 +321,7 @@ export const useAuthStore = defineStore('auth', {
       }
       const profile = toProfile(user, 12)
       this.setSession(profile)
+      this.rememberLogin(usernameOrEmail.trim())
       this.showFeedback('Đăng nhập thành công! Đang chuyển hướng...', 'success')
       return { ok: true, user: profile }
     },
@@ -330,6 +355,7 @@ export const useAuthStore = defineStore('auth', {
         )
         const profile = localAccount ? toProfile(localAccount, 12) : fallbackProfile(cleaned)
         this.setSession(profile)
+        this.rememberLogin(usernameOrEmail.trim())
         this.showFeedback(data.message || 'Đăng nhập thành công! Đang chuyển hướng...', 'success')
         return { ok: true, user: profile }
       } catch (error) {

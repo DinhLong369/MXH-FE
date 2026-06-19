@@ -8,7 +8,7 @@ const { feedback } = storeToRefs(auth)
 </script>
 
 <template>
-  <div class="min-h-[100dvh] w-full bg-[#070b16] text-slate-200 flex items-center justify-center relative px-4 overflow-hidden">
+  <div class="auth-shell fixed inset-0 w-screen bg-[#070b16] text-slate-200 grid place-items-center px-4 overflow-hidden">
     <!-- Nebula background -->
     <div class="absolute inset-0 pointer-events-none overflow-hidden z-0 opacity-40">
       <div class="absolute top-[20%] left-[-10%] w-[500px] h-[500px] rounded-full bg-gradient-to-br from-indigo-700/40 via-violet-600/35 to-sky-500/20 blur-[140px] animate-blob-1" />

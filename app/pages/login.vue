@@ -2,15 +2,16 @@
 import { User, Lock, Eye, EyeOff, ArrowRight } from 'lucide-vue-next'
 
 const auth = useAuthStore()
-// Điền sẵn tài khoản demo để test nhanh
-const username = ref('hainam.dev')
-const password = ref('password123')
+const { rememberedLogins } = storeToRefs(auth)
+const username = ref('')
+const password = ref('')
 const showPassword = ref(false)
 const isSubmitting = ref(false)
 
 onMounted(() => {
   auth.loadAccounts()
   auth.resetFlow()
+  username.value = rememberedLogins.value[0] || ''
 })
 
 async function submit() {
@@ -41,7 +42,7 @@ async function submit() {
           <div class="absolute inset-y-0 left-0 flex items-center pl-3.5 pointer-events-none">
             <User class="h-4.5 w-4.5 text-slate-500" />
           </div>
-          <input v-model="username" type="text" placeholder="hainam.dev hoặc email..." class="w-full rounded-2xl border border-slate-800 bg-slate-950/65 py-3.5 pl-10 pr-4 text-sm text-slate-100 placeholder-slate-500 focus:border-indigo-500/50 focus:outline-none focus:ring-1 focus:ring-indigo-500/20 transition">
+          <input v-model="username" type="text" placeholder="Tên tài khoản hoặc email" class="w-full rounded-2xl border border-slate-800 bg-slate-950/65 py-3.5 pl-10 pr-4 text-sm text-slate-100 placeholder-slate-500 focus:border-indigo-500/50 focus:outline-none focus:ring-1 focus:ring-indigo-500/20 transition">
         </div>
       </div>
 

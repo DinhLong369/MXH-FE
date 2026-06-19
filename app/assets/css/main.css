@@ -164,6 +164,16 @@
   background: radial-gradient(circle, var(--app-glow-3), transparent 68%);
 }
 
+.auth-shell {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  width: 100vw;
+  min-height: 100vh;
+  min-height: 100dvh;
+}
+
 /* ============================================================
    Custom scrollbars (bento feel)
    ============================================================ */
