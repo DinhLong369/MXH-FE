@@ -1,4 +1,4 @@
-import type { Post, UserProfile } from '~/types'
+import type { Group, Post, UserProfile } from '~/types'
 
 // ============================================================
 // Người dùng hiện tại (seed)
@@ -174,5 +174,56 @@ export const INITIAL_POSTS: Post[] = [
     tags: ['thietke', 'creative'],
     comments: [],
     createdAt: new Date(Date.now() - 3600000 * 20).toISOString(),
+  },
+]
+
+// ============================================================
+// Nhóm (groups) — seed để tìm kiếm; bấm vào lọc feed theo tag
+// ============================================================
+export const GROUPS: Group[] = [
+  {
+    id: 'group-tech',
+    name: 'Cộng đồng Công nghệ Việt',
+    description: 'Chia sẻ tin tức, thủ thuật và xu hướng công nghệ mới nhất.',
+    tag: 'congnghe',
+    avatar: 'https://images.unsplash.com/photo-1518770660439-4636190af475?auto=format&fit=crop&w=150&q=80',
+    membersCount: 48200,
+    joined: false,
+  },
+  {
+    id: 'group-travel',
+    name: 'Hội Đam mê Du lịch',
+    description: 'Review điểm đến, kinh nghiệm phượt và những cung đường đẹp.',
+    tag: 'dulich',
+    avatar: 'https://images.unsplash.com/photo-1469474968028-56623f02e42e?auto=format&fit=crop&w=150&q=80',
+    membersCount: 91500,
+    joined: true,
+  },
+  {
+    id: 'group-food',
+    name: 'Yêu Bếp - Ẩm thực Việt',
+    description: 'Công thức nấu ăn, món ngon mỗi ngày và mẹo vặt nhà bếp.',
+    tag: 'amthuc',
+    avatar: 'https://images.unsplash.com/photo-1556910103-1c02745aae4d?auto=format&fit=crop&w=150&q=80',
+    membersCount: 132000,
+    joined: false,
+  },
+  {
+    id: 'group-design',
+    name: 'Designer Việt Nam',
+    description: 'Cộng đồng thiết kế: UI/UX, đồ họa, typography và cảm hứng.',
+    tag: 'thietke',
+    avatar: 'https://images.unsplash.com/photo-1545235617-9465d2a55698?auto=format&fit=crop&w=150&q=80',
+    membersCount: 27800,
+    joined: false,
+  },
+  {
+    id: 'group-ai',
+    name: 'Trí tuệ Nhân tạo & AI',
+    description: 'Thảo luận về AI, machine learning và ứng dụng thực tế.',
+    tag: 'ai',
+    avatar: 'https://images.unsplash.com/photo-1526374965328-7f61d4dc18c5?auto=format&fit=crop&w=150&q=80',
+    membersCount: 15600,
+    joined: false,
   },
 ]

@@ -2,6 +2,8 @@
 // Kiểu dữ liệu dùng chung cho toàn ứng dụng LongHieu Chanel
 // ============================================================
 
+export * from './api'
+
 export type ReactionType = 'like' | 'love' | 'haha' | 'wow' | 'sad' | 'angry'
 
 export interface PostReaction {
@@ -81,6 +83,16 @@ export interface Chat {
   messages: Message[]
   lastMessage: string
   lastMessageTime: string
+}
+
+export interface Group {
+  id: string
+  name: string
+  description: string
+  tag: string
+  avatar: string
+  membersCount: number
+  joined: boolean
 }
 
 export type NotificationType = 'like' | 'comment' | 'follow' | 'system'

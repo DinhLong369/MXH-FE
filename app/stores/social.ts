@@ -2,13 +2,14 @@ import { defineStore } from 'pinia'
 import type {
   AppNotification,
   Chat,
+  Group,
   Message,
   Post,
   PostComment,
   ReactionType,
   UserProfile,
 } from '~/types'
-import { AI_BOTS, INITIAL_POSTS, ME_USER } from '~/data'
+import { AI_BOTS, GROUPS, INITIAL_POSTS, ME_USER } from '~/data'
 
 // Khóa localStorage
 const LS = {
@@ -17,6 +18,7 @@ const LS = {
   posts: 'vs_posts',
   notifs: 'vs_notifications',
   chats: 'vs_chats',
+  groups: 'vs_groups',
 }
 
 function readLS<T>(key: string): T | null {
@@ -30,6 +32,29 @@ function writeLS(key: string, value: unknown) {
   localStorage.setItem(key, JSON.stringify(value))
 }
 
+type RemoteRecord = Record<string, unknown>
+
+function asRecord(value: unknown): RemoteRecord | null {
+  return typeof value === 'object' && value !== null ? (value as RemoteRecord) : null
+}
+
+function getString(source: RemoteRecord | null, keys: string[], fallback = '') {
+  if (!source) return fallback
+  for (const key of keys) {
+    const value = source[key]
+    if (typeof value === 'string' && value.trim()) return value
+    if (typeof value === 'number') return String(value)
+  }
+  return fallback
+}
+
+function getArray(value: unknown): unknown[] {
+  if (Array.isArray(value)) return value
+  const record = asRecord(value)
+  const nested = record?.items || record?.conversations || record?.messages || record?.data
+  return Array.isArray(nested) ? nested : []
+}
+
 interface SocialState {
   currentTab: string
   posts: Post[]
@@ -37,6 +62,7 @@ interface SocialState {
   bots: UserProfile[]
   chats: Chat[]
   notifications: AppNotification[]
+  groups: Group[]
   selectedTag: string | null
   isCreateModalOpen: boolean
   aiPreFillContent: string
@@ -55,6 +81,7 @@ export const useSocialStore = defineStore('social', {
     bots: [],
     chats: [],
     notifications: [],
+    groups: [],
     selectedTag: null,
     isCreateModalOpen: false,
     aiPreFillContent: '',
@@ -95,6 +122,26 @@ export const useSocialStore = defineStore('social', {
       return s.currentUser
     },
     isViewingSelf: (s) => !s.viewingUserId || s.viewingUserId === s.currentUser.id,
+
+    // Tìm kiếm tổng hợp: người dùng + nhóm + bài viết
+    searchAll: (s) => (query: string) => {
+      const q = query.trim().toLowerCase()
+      if (!q) return { people: [], groups: [], posts: [] }
+
+      const people = [s.currentUser, ...s.bots].filter(
+        (u) => u.name.toLowerCase().includes(q) || u.username.toLowerCase().includes(q),
+      )
+      const groups = s.groups.filter(
+        (g) => g.name.toLowerCase().includes(q) || g.tag.toLowerCase().includes(q),
+      )
+      const posts = s.posts.filter(
+        (p) =>
+          p.content.toLowerCase().includes(q) ||
+          p.authorName.toLowerCase().includes(q) ||
+          p.tags.some((t) => t.toLowerCase().includes(q)),
+      )
+      return { people, groups, posts }
+    },
   },
 
   actions: {
@@ -154,6 +201,15 @@ export const useSocialStore = defineStore('social', {
       } else {
         this.chats = this.seedChats()
         writeLS(LS.chats, this.chats)
+      }
+
+      // F. Groups
+      const localGroups = readLS<Group[]>(LS.groups)
+      if (localGroups) {
+        this.groups = localGroups
+      } else {
+        this.groups = GROUPS
+        writeLS(LS.groups, GROUPS)
       }
 
       this.hydrated = true
@@ -221,6 +277,31 @@ export const useSocialStore = defineStore('social', {
     saveBots(newBots: UserProfile[]) {
       this.bots = newBots
       writeLS(LS.bots, newBots)
+    },
+    saveGroups(newGroups: Group[]) {
+      this.groups = newGroups
+      writeLS(LS.groups, newGroups)
+    },
+
+    // Tham gia / rời nhóm
+    toggleJoinGroup(groupId: string) {
+      this.saveGroups(
+        this.groups.map((g) =>
+          g.id === groupId
+            ? {
+                ...g,
+                joined: !g.joined,
+                membersCount: g.joined ? Math.max(0, g.membersCount - 1) : g.membersCount + 1,
+              }
+            : g,
+        ),
+      )
+    },
+
+    // Mở nhóm → lọc feed theo tag của nhóm
+    openGroup(groupId: string) {
+      const g = this.groups.find((x) => x.id === groupId)
+      if (g) this.filterTagAndNavigate(g.tag)
     },
 
     // ========================================================
@@ -580,6 +661,115 @@ export const useSocialStore = defineStore('social', {
     // ========================================================
     // G/H. Messenger
     // ========================================================
+    mapApiConversation(raw: unknown): Chat | null {
+      const item = asRecord(raw)
+      if (!item) return null
+
+      const participant =
+        asRecord(item.user) ||
+        asRecord(item.target_user) ||
+        asRecord(item.receiver) ||
+        asRecord(item.participant) ||
+        asRecord(item.other_user)
+      const id = getString(item, ['id', '_id', 'conversation_id'])
+      const targetId = getString(participant, ['id', '_id', 'user_id'], getString(item, ['user_id']))
+      if (!id) return null
+
+      const name = getString(participant, ['name', 'username', 'email'], 'Người dùng')
+      const username = getString(participant, ['username', 'email'], name)
+      const avatar = getString(
+        participant,
+        ['avatar', 'avatar_url', 'image'],
+        'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=150&q=80',
+      )
+      const lastMessage = getString(item, ['last_message', 'lastMessage', 'message'], '')
+      const updatedAt = getString(item, ['updated_at', 'last_message_at', 'created_at'])
+
+      return {
+        id,
+        targetUser: {
+          id: targetId || id,
+          name,
+          username,
+          avatar,
+          cover: 'https://images.unsplash.com/photo-1519681393784-d120267933ba?auto=format&fit=crop&w=1200&q=80',
+          bio: 'Thành viên của LongHieu Chanel.',
+          followersCount: 0,
+          followingCount: 0,
+          postsCount: 0,
+        },
+        unreadCount: Number(item.unread_count || item.unreadCount || 0),
+        messages: [],
+        lastMessage,
+        lastMessageTime: updatedAt ? new Date(updatedAt).toLocaleString('vi-VN') : 'Vừa xong',
+      }
+    },
+
+    mapApiMessage(raw: unknown, chatId: string): Message | null {
+      const item = asRecord(raw)
+      if (!item) return null
+      const id = getString(item, ['id', '_id', 'message_id'], `msg-api-${Date.now()}`)
+      const text = getString(item, ['text', 'content', 'message', 'body'])
+      if (!text) return null
+      const senderId = getString(item, ['sender_id', 'user_id', 'from'])
+      return {
+        id,
+        chatId,
+        sender: senderId && senderId === this.currentUser.id ? 'me' : 'them',
+        text,
+        createdAt: getString(item, ['created_at', 'updated_at'], new Date().toISOString()),
+      }
+    },
+
+    async syncChatsFromApi() {
+      const auth = useAuthStore()
+      const accessToken = auth.getAccessToken()
+      if (!accessToken) return
+
+      try {
+        const api = useMxhApi()
+        const response = await api.chat.listConversations(accessToken)
+        if (!response.status) {
+          this.showToast(response.message || 'Không thể tải danh sách tin nhắn từ API.')
+          return
+        }
+
+        const apiChats = getArray(response.data)
+          .map((item) => this.mapApiConversation(item))
+          .filter((chat): chat is Chat => Boolean(chat))
+        if (!apiChats.length) return
+
+        const chatsWithMessages = await Promise.all(
+          apiChats.map(async (chat) => {
+            try {
+              const messages = await api.chat.listConversationMessages(accessToken, chat.id, {
+                page: 1,
+                limit: 50,
+              })
+              const apiMessages = getArray(messages.data)
+                .map((item) => this.mapApiMessage(item, chat.id))
+                .filter((message): message is Message => Boolean(message))
+              if (!apiMessages.length) return chat
+              const last = apiMessages[apiMessages.length - 1]
+              return {
+                ...chat,
+                messages: apiMessages,
+                lastMessage: last?.text || chat.lastMessage,
+                lastMessageTime: last ? 'Vừa xong' : chat.lastMessageTime,
+              }
+            } catch (error) {
+              console.warn('Cannot load API messages:', error)
+              return chat
+            }
+          }),
+        )
+
+        this.saveChats(chatsWithMessages)
+      } catch (error) {
+        console.warn('Cannot sync API conversations:', error)
+      }
+    },
+
     sendMessage(chatId: string, text: string) {
       const msg: Message = {
         id: `msg-${Date.now()}`,

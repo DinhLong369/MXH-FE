@@ -27,7 +27,7 @@ function badge(key: string): number {
 
 <template>
   <!-- Desktop sidebar -->
-  <aside class="hidden md:flex md:w-64 lg:w-72 shrink-0 flex-col gap-2 p-4 border-r border-slate-800/60 md:h-screen overflow-y-auto thin-scrollbar">
+  <aside class="hidden md:flex md:w-64 lg:w-72 shrink-0 flex-col gap-2 p-4 border-r border-slate-800/60 md:h-full overflow-y-auto thin-scrollbar">
     <div class="flex items-center gap-2 px-3 py-4 mb-2">
       <div class="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-indigo-500 to-violet-600 shadow-lg shadow-indigo-900/40">
         <Sparkles class="h-5 w-5 text-white" />

@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia'
-import type { UserProfile } from '~/types'
+import type { LoginResponse, RegisterUserResponse, UserProfile } from '~/types'
 
 // ============================================================
 // Tài khoản lưu cục bộ (mô phỏng database trong localStorage)
@@ -30,6 +30,8 @@ export type FeedbackType = 'error' | 'success' | ''
 const LS_ACCOUNTS = 'vs_accounts'
 const LS_USER = 'vs_currentUser'
 const LS_AUTHED = 'vs_isAuthenticated'
+const LS_ACCESS_TOKEN = 'vs_access_token'
+const LS_REFRESH_TOKEN = 'vs_refresh_token'
 
 const DEFAULT_ACCOUNTS: StoredAccount[] = [
   {
@@ -73,6 +75,58 @@ function toProfile(acct: StoredAccount, postsCount = 0): UserProfile {
   }
 }
 
+function fallbackProfile(account: string): UserProfile {
+  const username = account.includes('@') ? account.split('@')[0]! : account
+  return {
+    id: username || 'me',
+    name: username || 'Người dùng',
+    username: username || 'user',
+    bio: 'Thành viên của LongHieu Chanel.',
+    avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=200&q=80',
+    cover: 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&w=1000&q=80',
+    followersCount: 0,
+    followingCount: 0,
+    postsCount: 0,
+    isAI: false,
+  }
+}
+
+function profileFromRegisterUser(user: RegisterUserResponse): UserProfile {
+  return {
+    id: user.id,
+    name: user.username,
+    username: user.username,
+    bio: 'Thành viên mới gia nhập cộng đồng LongHieu Chanel năng động. Cùng chia sẻ cảm hứng sáng tạo!',
+    avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=200&q=80',
+    cover: 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&w=1000&q=80',
+    followersCount: 0,
+    followingCount: 0,
+    postsCount: 0,
+    isAI: false,
+  }
+}
+
+function getBackendMessage(error: unknown) {
+  if (typeof error === 'object' && error !== null) {
+    const maybe = error as {
+      data?: { error?: string; message?: string }
+      statusMessage?: string
+    }
+    return maybe.data?.message || maybe.data?.error || maybe.statusMessage || ''
+  }
+  return ''
+}
+
+function getErrorMessage(error: unknown, fallback: string) {
+  const backendMessage = getBackendMessage(error)
+  if (backendMessage) return backendMessage
+  if (typeof error === 'object' && error !== null) {
+    const maybe = error as { message?: string }
+    return maybe.message || fallback
+  }
+  return fallback
+}
+
 interface AuthState {
   accounts: StoredAccount[]
   feedback: { text: string; type: FeedbackType }
@@ -80,6 +134,9 @@ interface AuthState {
   otpSentCode: string
   otpTimer: number
   identifiedUser: StoredAccount | null
+  registerToken: string
+  forgotPasswordToken: string
+  isUsingApiOtp: boolean
   loaded: boolean
 }
 
@@ -93,6 +150,9 @@ export const useAuthStore = defineStore('auth', {
     otpSentCode: '',
     otpTimer: 120,
     identifiedUser: null,
+    registerToken: '',
+    forgotPasswordToken: '',
+    isUsingApiOtp: false,
     loaded: false,
   }),
 
@@ -112,6 +172,17 @@ export const useAuthStore = defineStore('auth', {
 
     persistAccounts() {
       if (import.meta.client) localStorage.setItem(LS_ACCOUNTS, JSON.stringify(this.accounts))
+    },
+
+    setApiTokens(tokens: Pick<LoginResponse, 'access_token' | 'refresh_token'>) {
+      if (!import.meta.client) return
+      localStorage.setItem(LS_ACCESS_TOKEN, tokens.access_token)
+      localStorage.setItem(LS_REFRESH_TOKEN, tokens.refresh_token)
+    },
+
+    getAccessToken() {
+      if (!import.meta.client) return ''
+      return localStorage.getItem(LS_ACCESS_TOKEN) || ''
     },
 
     // ----- Feedback -----
@@ -193,6 +264,8 @@ export const useAuthStore = defineStore('auth', {
     logout() {
       if (import.meta.client) {
         localStorage.removeItem(LS_AUTHED)
+        localStorage.removeItem(LS_ACCESS_TOKEN)
+        localStorage.removeItem(LS_REFRESH_TOKEN)
         // Giữ vs_currentUser/feed để lần sau vào lại vẫn còn dữ liệu demo
       }
     },
@@ -226,6 +299,54 @@ export const useAuthStore = defineStore('auth', {
       this.setSession(profile)
       this.showFeedback('Đăng nhập thành công! Đang chuyển hướng...', 'success')
       return { ok: true, user: profile }
+    },
+
+    async loginWithApi(usernameOrEmail: string, password: string): Promise<{ ok: boolean; user?: UserProfile }> {
+      this.clearFeedback()
+      if (!usernameOrEmail.trim()) {
+        this.showFeedback('Vui lòng điền tên đăng nhập hoặc email!', 'error')
+        return { ok: false }
+      }
+      if (!password) {
+        this.showFeedback('Vui lòng nhập mật khẩu!', 'error')
+        return { ok: false }
+      }
+
+      try {
+        const api = useMxhApi()
+        const data = await api.auth.login({
+          account: usernameOrEmail.trim(),
+          password,
+        })
+        if (!data.status) {
+          this.showFeedback(data.message || 'Đăng nhập không thành công.', 'error')
+          return { ok: false }
+        }
+
+        this.setApiTokens(data)
+        const cleaned = usernameOrEmail.trim().toLowerCase()
+        const localAccount = this.accounts.find(
+          (a) => a.username.toLowerCase() === cleaned || a.email.toLowerCase() === cleaned,
+        )
+        const profile = localAccount ? toProfile(localAccount, 12) : fallbackProfile(cleaned)
+        this.setSession(profile)
+        this.showFeedback(data.message || 'Đăng nhập thành công! Đang chuyển hướng...', 'success')
+        return { ok: true, user: profile }
+      } catch (error) {
+        const backendMessage = getBackendMessage(error)
+        if (backendMessage) {
+          this.showFeedback(backendMessage, 'error')
+          return { ok: false }
+        }
+
+        const fallback = this.login(usernameOrEmail, password)
+        if (fallback.ok) {
+          this.showFeedback('Đăng nhập demo thành công. Backend hiện chưa phản hồi ổn định.', 'success')
+          return fallback
+        }
+        this.showFeedback(getErrorMessage(error, 'Không thể đăng nhập qua API. Vui lòng thử lại.'), 'error')
+        return { ok: false }
+      }
     },
 
     // ========================================================
@@ -274,6 +395,65 @@ export const useAuthStore = defineStore('auth', {
       return { ok: true }
     },
 
+    async requestRegisterOtp(form: {
+      name: string
+      username: string
+      email: string
+      password: string
+      confirm: string
+    }): Promise<{ ok: boolean }> {
+      this.clearFeedback()
+      this.isUsingApiOtp = false
+      this.registerToken = ''
+
+      const { name, username, email, password, confirm } = form
+      if (!name.trim() || !username.trim() || !email.trim() || !password || !confirm) {
+        this.showFeedback('Vui lòng điền đầy đủ tất cả thông tin!', 'error')
+        return { ok: false }
+      }
+      if (username.includes(' ') || username.length < 3) {
+        this.showFeedback('Tên đăng nhập viết liền không dấu, tối thiểu 3 kí tự!', 'error')
+        return { ok: false }
+      }
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) {
+        this.showFeedback('Cấu trúc email không hợp lệ!', 'error')
+        return { ok: false }
+      }
+      if (password.length < 6) {
+        this.showFeedback('Mật khẩu bảo mật tối thiểu 6 ký tự!', 'error')
+        return { ok: false }
+      }
+      if (password !== confirm) {
+        this.showFeedback('Xác nhận mật khẩu không trùng khớp!', 'error')
+        return { ok: false }
+      }
+      try {
+        const api = useMxhApi()
+        const data = await api.auth.sendRegisterOtp({ email: email.trim().toLowerCase() })
+        if (!data.status) {
+          this.showFeedback(data.message || 'Không thể gửi mã OTP đăng ký.', 'error')
+          return { ok: false }
+        }
+        this.isUsingApiOtp = true
+        this.otpTimer = 120
+        this.startTimer()
+        this.simulatedEmail = null
+        this.showFeedback(data.message || `Đã gửi mã kích hoạt tới ${email}`, 'success')
+        return { ok: true }
+      } catch (error) {
+        const backendMessage = getBackendMessage(error)
+        if (backendMessage) {
+          this.showFeedback(backendMessage, 'error')
+          return { ok: false }
+        }
+
+        console.warn('Register OTP API failed, fallback to local simulator:', error)
+        this.showFeedback(`API OTP chưa sẵn sàng. Đã gửi mã mô phỏng tới ${email}`, 'success')
+        this.triggerEmail('✨ Mã Kích Hoạt Đăng Ký Tài Khoản LongHieu Chanel', 'KÍCH HOẠT TÀI KHOẢN MỚI')
+        return { ok: true }
+      }
+    },
+
     finalizeRegister(
       form: { name: string; username: string; email: string; password: string },
       enteredCode: string,
@@ -304,6 +484,68 @@ export const useAuthStore = defineStore('auth', {
       return { ok: true, user: profile }
     },
 
+    async finalizeRegisterWithApi(
+      form: { name: string; username: string; email: string; password: string },
+      enteredCode: string,
+    ): Promise<{ ok: boolean; user?: UserProfile }> {
+      if (!this.isUsingApiOtp) return this.finalizeRegister(form, enteredCode)
+
+      if (enteredCode.length !== 6) {
+        this.showFeedback('Vui lòng nhập đủ 6 chữ số mã OTP!', 'error')
+        return { ok: false }
+      }
+      if (this.otpTimer === 0) {
+        this.showFeedback('Mã OTP đã hết hạn hiệu lực!', 'error')
+        return { ok: false }
+      }
+
+      try {
+        const api = useMxhApi()
+        const verify = await api.auth.verifyRegisterOtp({
+          email: form.email.trim().toLowerCase(),
+          otp: enteredCode,
+        })
+        if (!verify.status || !verify.token) {
+          this.showFeedback(verify.message || 'Mã OTP xác thực không đúng!', 'error')
+          return { ok: false }
+        }
+
+        this.registerToken = verify.token
+        const data = await api.auth.register({
+          username: form.username.trim().toLowerCase(),
+          password: form.password,
+          token: verify.token,
+        })
+        if (!data.status) {
+          this.showFeedback(data.message || 'Không thể đăng ký tài khoản.', 'error')
+          return { ok: false }
+        }
+
+        const user: StoredAccount = {
+          id: data.data?.id || `user-${Date.now()}`,
+          name: form.name.trim(),
+          username: data.data?.username || form.username.trim().toLowerCase(),
+          email: data.data?.email || form.email.trim().toLowerCase(),
+          passwordHash: form.password,
+          bio: 'Thành viên mới gia nhập cộng đồng LongHieu Chanel năng động. Cùng chia sẻ cảm hứng sáng tạo!',
+          avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=200&q=80',
+          cover: 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&w=1000&q=80',
+          followersCount: 0,
+          followingCount: 0,
+        }
+        this.accounts = [...this.accounts, user]
+        this.persistAccounts()
+        const profile = data.data ? profileFromRegisterUser(data.data) : toProfile(user, 0)
+        this.setSession({ ...profile, name: form.name.trim() || profile.name })
+        this.stopTimer()
+        this.showFeedback(data.message || 'Đăng ký & xác thực hoàn tất! Chào mừng bạn...', 'success')
+        return { ok: true, user: profile }
+      } catch (error) {
+        this.showFeedback(getErrorMessage(error, 'Không thể hoàn tất đăng ký qua API.'), 'error')
+        return { ok: false }
+      }
+    },
+
     // ========================================================
     // FORGOT PASSWORD — tìm email → OTP → đặt mật khẩu mới
     // ========================================================
@@ -324,6 +566,47 @@ export const useAuthStore = defineStore('auth', {
       return { ok: true }
     },
 
+    async requestForgotPasswordOtp(email: string): Promise<{ ok: boolean }> {
+      this.clearFeedback()
+      this.isUsingApiOtp = false
+      this.forgotPasswordToken = ''
+
+      if (!email.trim()) {
+        this.showFeedback('Vui lòng nhập địa chỉ Gmail khôi phục!', 'error')
+        return { ok: false }
+      }
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) {
+        this.showFeedback('Cấu trúc email không hợp lệ!', 'error')
+        return { ok: false }
+      }
+
+      try {
+        const api = useMxhApi()
+        const data = await api.auth.sendForgotPasswordOtp({
+          email: email.trim().toLowerCase(),
+        })
+        if (!data.status) {
+          this.showFeedback(data.message || 'Không thể gửi mã khôi phục.', 'error')
+          return { ok: false }
+        }
+        this.isUsingApiOtp = true
+        this.otpTimer = 120
+        this.startTimer()
+        this.simulatedEmail = null
+        this.showFeedback(data.message || `Đã gửi mã khôi phục qua ${email}`, 'success')
+        return { ok: true }
+      } catch (error) {
+        const backendMessage = getBackendMessage(error)
+        if (backendMessage) {
+          this.showFeedback(backendMessage, 'error')
+          return { ok: false }
+        }
+
+        console.warn('Forgot password OTP API failed, fallback to local simulator:', error)
+        return this.forgotFindEmail(email)
+      }
+    },
+
     verifyForgotOtp(enteredCode: string): { ok: boolean } {
       const check = this.verifyOtp(enteredCode)
       if (!check.ok) {
@@ -332,6 +615,37 @@ export const useAuthStore = defineStore('auth', {
       }
       this.showFeedback('Xác minh chủ sở hữu thành công! Vui lòng đặt mật khẩu mới.', 'success')
       return { ok: true }
+    },
+
+    async verifyForgotOtpWithApi(email: string, enteredCode: string): Promise<{ ok: boolean }> {
+      if (!this.isUsingApiOtp) return this.verifyForgotOtp(enteredCode)
+
+      if (enteredCode.length !== 6) {
+        this.showFeedback('Vui lòng nhập đủ 6 chữ số mã OTP!', 'error')
+        return { ok: false }
+      }
+      if (this.otpTimer === 0) {
+        this.showFeedback('Mã OTP đã hết hạn hiệu lực!', 'error')
+        return { ok: false }
+      }
+
+      try {
+        const api = useMxhApi()
+        const data = await api.auth.verifyForgotPasswordOtp({
+          email: email.trim().toLowerCase(),
+          otp: enteredCode,
+        })
+        if (!data.status || !data.token) {
+          this.showFeedback(data.message || 'Mã OTP xác thực không đúng!', 'error')
+          return { ok: false }
+        }
+        this.forgotPasswordToken = data.token
+        this.showFeedback(data.message || 'Xác minh chủ sở hữu thành công! Vui lòng đặt mật khẩu mới.', 'success')
+        return { ok: true }
+      } catch (error) {
+        this.showFeedback(getErrorMessage(error, 'Không thể xác minh OTP qua API.'), 'error')
+        return { ok: false }
+      }
     },
 
     resetPassword(newPassword: string, confirm: string): { ok: boolean; username?: string } {
@@ -363,12 +677,57 @@ export const useAuthStore = defineStore('auth', {
       return { ok: true, username }
     },
 
+    async resetPasswordWithApi(newPassword: string, confirm: string): Promise<{ ok: boolean; username?: string }> {
+      if (!this.isUsingApiOtp) return this.resetPassword(newPassword, confirm)
+
+      this.clearFeedback()
+      if (!newPassword || !confirm) {
+        this.showFeedback('Điền đầy đủ thông tin mật khẩu mới!', 'error')
+        return { ok: false }
+      }
+      if (newPassword.length < 6) {
+        this.showFeedback('Mật khẩu mới tối thiểu 6 ký tự bảo mật!', 'error')
+        return { ok: false }
+      }
+      if (newPassword !== confirm) {
+        this.showFeedback('Xác nhận mật khẩu mới không trùng khớp!', 'error')
+        return { ok: false }
+      }
+      if (!this.forgotPasswordToken) {
+        this.showFeedback('Phiên khôi phục không hợp lệ.', 'error')
+        return { ok: false }
+      }
+
+      try {
+        const api = useMxhApi()
+        const data = await api.auth.resetPassword({
+          token: this.forgotPasswordToken,
+          new_password: newPassword,
+        })
+        if (!data.status) {
+          this.showFeedback(data.message || 'Không thể đổi mật khẩu.', 'error')
+          return { ok: false }
+        }
+        this.stopTimer()
+        this.forgotPasswordToken = ''
+        this.isUsingApiOtp = false
+        this.showFeedback(data.message || 'Khôi phục mật khẩu thành công! Chuyển hướng về đăng nhập...', 'success')
+        return { ok: true }
+      } catch (error) {
+        this.showFeedback(getErrorMessage(error, 'Không thể đổi mật khẩu qua API.'), 'error')
+        return { ok: false }
+      }
+    },
+
     // Reset state khi chuyển màn
     resetFlow() {
       this.clearFeedback()
       this.stopTimer()
       this.otpTimer = 120
       this.otpSentCode = ''
+      this.registerToken = ''
+      this.forgotPasswordToken = ''
+      this.isUsingApiOtp = false
     },
   },
 })

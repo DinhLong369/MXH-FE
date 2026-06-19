@@ -94,7 +94,11 @@ function timeLabel(iso: string): string {
 }
 
 watch(activeChatId, scrollToBottom)
-onMounted(scrollToBottom)
+onMounted(async () => {
+  await store.syncChatsFromApi()
+  if (!activeChatId.value && chats.value[0]) activeChatId.value = chats.value[0].id
+  await scrollToBottom()
+})
 </script>
 
 <template>

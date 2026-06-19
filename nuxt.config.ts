@@ -1,5 +1,9 @@
+declare const process: {
+  env: Record<string, string | undefined>
+}
+
 // https://nuxt.com/docs/api/configuration/nuxt-config
-export default defineNuxtConfig({
+export default {
   compatibilityDate: '2025-01-01',
   devtools: { enabled: true },
 
@@ -19,7 +23,7 @@ export default defineNuxtConfig({
     apiSecret: process.env.NUXT_API_SECRET || '',
     public: {
       // Exposed to the client
-      apiBaseUrl: process.env.NUXT_PUBLIC_API_BASE_URL || 'http://localhost:8000/api',
+      apiBaseUrl: process.env.NUXT_PUBLIC_API_BASE_URL || 'https://mxh-backend.onrender.com',
       appName: process.env.NUXT_PUBLIC_APP_NAME || 'LongHieu Chanel',
     },
   },
@@ -36,4 +40,4 @@ export default defineNuxtConfig({
       title: 'LongHieu Chanel — Mạng xã hội thông minh',
     },
   },
-})
+}

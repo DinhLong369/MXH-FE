@@ -6,6 +6,7 @@ const auth = useAuthStore()
 const username = ref('hainam.dev')
 const password = ref('password123')
 const showPassword = ref(false)
+const isSubmitting = ref(false)
 
 onMounted(() => {
   auth.loadAccounts()
@@ -13,9 +14,15 @@ onMounted(() => {
 })
 
 async function submit() {
-  const res = auth.login(username.value, password.value)
-  if (res.ok) {
-    setTimeout(() => navigateTo('/'), 700)
+  if (isSubmitting.value) return
+  isSubmitting.value = true
+  try {
+    const res = await auth.loginWithApi(username.value, password.value)
+    if (res.ok) {
+      setTimeout(() => navigateTo('/'), 700)
+    }
+  } finally {
+    isSubmitting.value = false
   }
 }
 </script>
@@ -56,8 +63,8 @@ async function submit() {
         💡 Tài khoản thử: <b>hainam.dev</b> (hoặc <b>hainam.dev@gmail.com</b>), mật khẩu <b>password123</b>
       </p> -->
 
-      <button type="submit" class="w-full flex items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-indigo-600 via-indigo-700 to-violet-600 py-3.5 px-4 font-bold text-white shadow-lg transition hover:opacity-95 active:scale-95 mt-1">
-        <span>Đăng nhập</span>
+      <button type="submit" :disabled="isSubmitting" class="w-full flex items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-indigo-600 via-indigo-700 to-violet-600 py-3.5 px-4 font-bold text-white shadow-lg transition hover:opacity-95 active:scale-95 disabled:cursor-not-allowed disabled:opacity-60 mt-1">
+        <span>{{ isSubmitting ? 'Đang đăng nhập...' : 'Đăng nhập' }}</span>
         <ArrowRight class="h-4.5 w-4.5" />
       </button>
 

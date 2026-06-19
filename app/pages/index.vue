@@ -11,48 +11,62 @@ const showRightBar = computed(() =>
 </script>
 
 <template>
-  <div class="min-h-screen bg-[#0a0f1d] text-slate-200 antialiased flex flex-col relative overflow-hidden">
+  <div class="app-shell min-h-screen text-slate-200 antialiased flex flex-col relative overflow-hidden">
     <!-- Ambient animated blobs -->
     <div class="absolute inset-0 z-0 pointer-events-none overflow-hidden opacity-30">
       <div class="absolute top-[10%] left-[5%] w-[450px] h-[450px] rounded-full bg-gradient-to-br from-indigo-600 to-indigo-500 blur-[130px] animate-blob-1" />
       <div class="absolute top-[40%] right-[10%] w-[500px] h-[500px] rounded-full bg-gradient-to-bl from-violet-600 to-sky-500 blur-[150px] animate-blob-2" />
       <div class="absolute bottom-[10%] left-[20%] w-[400px] h-[400px] rounded-full bg-gradient-to-tr from-fuchsia-600 to-slate-800 blur-[120px] animate-blob-3" />
-      <div class="absolute inset-0 bg-[radial-gradient(#334155_1px,transparent_1px)] [background-size:24px_24px] opacity-[0.15]" />
+      <div class="app-bg-pattern absolute inset-0 bg-[radial-gradient(#334155_1px,transparent_1px)] [background-size:24px_24px] opacity-[0.15]" />
     </div>
 
     <!-- Global loading bar -->
     <div v-if="isGlobalLoading" class="fixed top-0 left-0 right-0 z-50 h-1 bg-gradient-to-r from-indigo-500 via-orange-500 to-violet-500 animate-pulse" />
 
     <ClientOnly>
-      <div class="h-screen w-full max-w-7xl mx-auto flex flex-col md:flex-row items-stretch relative z-10 overflow-hidden">
-        <Sidebar />
+      <div class="h-screen w-full max-w-7xl mx-auto flex flex-col relative z-10 overflow-hidden">
+        <!-- Top search bar (kiểu Facebook) -->
+        <header class="relative z-50 shrink-0 flex items-center justify-center gap-3 px-4 py-2.5">
+          <div class="absolute left-4 flex md:hidden items-center gap-2 shrink-0">
+            <div class="flex h-8 w-8 items-center justify-center rounded-xl  from-indigo-500 to-violet-600">
+              <span class="text-white font-extrabold text-sm">L</span>
+            </div>
+          </div>
+          <SearchBar />
+        </header>
 
-        <main class="flex-1 flex justify-center pb-24 md:pb-6 h-screen overflow-y-auto thin-scrollbar">
-          <AnimatePresence mode="wait">
-            <Motion
-              :key="currentTab"
-              :initial="{ opacity: 0, y: 10 }"
-              :animate="{ opacity: 1, y: 0 }"
-              :exit="{ opacity: 0, y: -10 }"
-              :transition="{ duration: 0.2 }"
-              class="w-full flex justify-center"
-            >
-              <Feed v-if="currentTab === 'home'" />
-              <Explore v-else-if="currentTab === 'explore'" />
-              <Messenger v-else-if="currentTab === 'messenger'" />
-              <Notifications v-else-if="currentTab === 'notifications'" />
-              <Profile v-else-if="currentTab === 'profile'" />
-            </Motion>
-          </AnimatePresence>
-        </main>
+        <div class="app-main-layout flex-1 flex flex-row items-stretch overflow-hidden">
+          <Sidebar />
 
-        <RightBar v-if="showRightBar" />
+          <main class="flex-1 flex justify-center pb-24 md:pb-6 h-full overflow-y-auto thin-scrollbar">
+            <AnimatePresence mode="wait">
+              <Motion
+                :key="currentTab"
+                :initial="{ opacity: 0, y: 10 }"
+                :animate="{ opacity: 1, y: 0 }"
+                :exit="{ opacity: 0, y: -10 }"
+                :transition="{ duration: 0.2 }"
+                class="w-full flex justify-center"
+              >
+                <Feed v-if="currentTab === 'home'" />
+                <Explore v-else-if="currentTab === 'explore'" />
+                <Messenger v-else-if="currentTab === 'messenger'" />
+                <Notifications v-else-if="currentTab === 'notifications'" />
+                <Profile v-else-if="currentTab === 'profile'" />
+              </Motion>
+            </AnimatePresence>
+          </main>
+
+          <RightBar v-if="showRightBar" />
+        </div>
       </div>
 
       <!-- Create post modal -->
       <AnimatePresence>
         <CreatePostModal v-if="isCreateModalOpen" />
       </AnimatePresence>
+
+      <ThemeSwitcher />
 
       <!-- Toast -->
       <AnimatePresence>

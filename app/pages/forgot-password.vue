@@ -9,6 +9,7 @@ const email = ref('')
 const otpCode = ref('')
 const newPassword = ref('')
 const newConfirm = ref('')
+const isSubmitting = ref(false)
 
 const timerText = computed(() => auth.formatTimer(otpTimer.value))
 
@@ -17,23 +18,41 @@ onMounted(() => {
   auth.resetFlow()
 })
 
-function submitEmail() {
-  const res = auth.forgotFindEmail(email.value)
-  if (res.ok) {
-    otpCode.value = ''
-    step.value = 'otp'
+async function submitEmail() {
+  if (isSubmitting.value) return
+  isSubmitting.value = true
+  try {
+    const res = await auth.requestForgotPasswordOtp(email.value)
+    if (res.ok) {
+      otpCode.value = auth.isUsingApiOtp ? '' : auth.otpSentCode
+      step.value = 'otp'
+    }
+  } finally {
+    isSubmitting.value = false
   }
 }
 
-function verifyOtp() {
-  const res = auth.verifyForgotOtp(otpCode.value)
-  if (res.ok) step.value = 'newpass'
+async function verifyOtp() {
+  if (isSubmitting.value) return
+  isSubmitting.value = true
+  try {
+    const res = await auth.verifyForgotOtpWithApi(email.value, otpCode.value)
+    if (res.ok) step.value = 'newpass'
+  } finally {
+    isSubmitting.value = false
+  }
 }
 
-function setNewPassword() {
-  const res = auth.resetPassword(newPassword.value, newConfirm.value)
-  if (res.ok) {
-    setTimeout(() => navigateTo('/login'), 900)
+async function setNewPassword() {
+  if (isSubmitting.value) return
+  isSubmitting.value = true
+  try {
+    const res = await auth.resetPasswordWithApi(newPassword.value, newConfirm.value)
+    if (res.ok) {
+      setTimeout(() => navigateTo('/login'), 900)
+    }
+  } finally {
+    isSubmitting.value = false
   }
 }
 </script>
@@ -55,8 +74,8 @@ function setNewPassword() {
         </div>
       </div>
 
-      <button type="submit" class="w-full flex items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-indigo-600 to-indigo-700 py-3.5 px-4 font-bold text-white shadow-lg transition hover:opacity-95 active:scale-95 mt-1">
-        <span>Yêu cầu mã khôi phục</span>
+      <button type="submit" :disabled="isSubmitting" class="w-full flex items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-indigo-600 to-indigo-700 py-3.5 px-4 font-bold text-white shadow-lg transition hover:opacity-95 active:scale-95 disabled:cursor-not-allowed disabled:opacity-60 mt-1">
+        <span>{{ isSubmitting ? 'Đang gửi mã...' : 'Yêu cầu mã khôi phục' }}</span>
         <ArrowRight class="h-4.5 w-4.5" />
       </button>
 
@@ -74,8 +93,8 @@ function setNewPassword() {
 
       <AuthOtpScreen v-model="otpCode" :timer-text="timerText" danger />
 
-      <button type="submit" class="w-full flex items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-indigo-600 to-indigo-700 py-3.5 px-4 font-bold text-white shadow-lg transition hover:opacity-95 active:scale-95">
-        <span>Xác nhận khôi phục</span>
+      <button type="submit" :disabled="isSubmitting" class="w-full flex items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-indigo-600 to-indigo-700 py-3.5 px-4 font-bold text-white shadow-lg transition hover:opacity-95 active:scale-95 disabled:cursor-not-allowed disabled:opacity-60">
+        <span>{{ isSubmitting ? 'Đang xác nhận...' : 'Xác nhận khôi phục' }}</span>
         <ArrowRight class="h-4.5 w-4.5" />
       </button>
     </form>
@@ -97,8 +116,8 @@ function setNewPassword() {
         <input v-model="newConfirm" type="password" placeholder="••••••••" class="w-full border-0 bg-transparent py-0.5 text-sm text-slate-100 placeholder-slate-600 focus:outline-none focus:ring-0 font-mono">
       </div>
 
-      <button type="submit" class="w-full flex items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-indigo-600 via-indigo-700 to-violet-600 py-3.5 px-4 font-bold text-white shadow-lg transition hover:opacity-95 active:scale-95 mt-1">
-        <span>Thay đổi mật khẩu</span>
+      <button type="submit" :disabled="isSubmitting" class="w-full flex items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-indigo-600 via-indigo-700 to-violet-600 py-3.5 px-4 font-bold text-white shadow-lg transition hover:opacity-95 active:scale-95 disabled:cursor-not-allowed disabled:opacity-60 mt-1">
+        <span>{{ isSubmitting ? 'Đang cập nhật...' : 'Thay đổi mật khẩu' }}</span>
         <Key class="h-4.5 w-4.5 text-emerald-300" />
       </button>
     </form>
