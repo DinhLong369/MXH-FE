@@ -2,7 +2,7 @@
 import {
   Send, MessageCircle, ArrowLeft, ArrowDown, SmilePlus, Pencil, Trash2, Check, X,
   Image as ImageIcon, Copy, Mic, Video, MapPin, Smile, Film, Plus, PhoneOff,
-  SquarePen, Search,
+  SquarePen, Search, MoreVertical,
 } from 'lucide-vue-next'
 import type { Chat, Message } from '~/types'
 import type { ApiUserResult } from '~/types/api'
@@ -37,6 +37,9 @@ let recordTimer: ReturnType<typeof setInterval> | null = null
 
 // Gọi video (giả lập)
 const inCall = ref(false)
+
+// Menu cuộc hội thoại (xóa)
+const showChatMenu = ref(false)
 
 // Tìm kiếm người dùng để nhắn tin mới
 const showSearch = ref(false)
@@ -137,6 +140,7 @@ async function startChatWith(user: ApiUserResult) {
 function closePanels() {
   showAttachMenu.value = false
   showStickerPanel.value = false
+  showChatMenu.value = false
 }
 
 // Bấm vào ô nhập = đã đọc → ẩn badge thông báo tin nhắn của hội thoại hiện tại
@@ -160,8 +164,17 @@ function saveEdit() {
 function cancelEdit() {
   editingId.value = null
 }
-function del(msgId: string) {
-  if (activeChat.value) store.deleteMessage(activeChat.value.id, msgId)
+async function del(msgId: string) {
+  if (activeChat.value) await store.deleteMessage(activeChat.value.id, msgId)
+}
+
+async function deleteConversation() {
+  const chat = activeChat.value
+  if (!chat) return
+  if (!confirm(`Xóa cuộc trò chuyện với ${chat.targetUser.name}?`)) return
+  showChatMenu.value = false
+  activeChatId.value = null
+  await store.deleteConversation(chat.id)
 }
 function pickReact(msgId: string, emoji: string) {
   if (activeChat.value) store.reactMessage(activeChat.value.id, msgId, emoji)
@@ -527,7 +540,10 @@ onUnmounted(() => {
           >
             <div class="relative">
               <img :src="chat.targetUser.avatar" :alt="chat.targetUser.name" class="h-11 w-11 rounded-full object-cover" referrerpolicy="no-referrer">
-              <span class="absolute bottom-0 right-0 h-3 w-3 rounded-full bg-emerald-500 ring-2 ring-slate-900" />
+              <span
+                class="absolute bottom-0 right-0 h-3 w-3 rounded-full ring-2 ring-slate-900 transition-colors"
+                :class="store.isUserOnline(chat.targetUser.id) ? 'bg-emerald-500' : 'bg-slate-600'"
+              />
             </div>
             <div class="flex-1 overflow-hidden">
               <div class="flex items-center justify-between">
@@ -563,12 +579,35 @@ onUnmounted(() => {
             <img :src="activeChat.targetUser.avatar" :alt="activeChat.targetUser.name" class="h-9 w-9 rounded-full object-cover cursor-pointer hover:ring-2 hover:ring-indigo-400/40 transition" referrerpolicy="no-referrer" @click="store.viewProfile(activeChat.targetUser.id)">
             <div class="flex-1 cursor-pointer" @click="store.viewProfile(activeChat.targetUser.id)">
               <p class="text-xs font-bold text-slate-100 hover:text-indigo-400 transition">{{ activeChat.targetUser.name }}</p>
-              <p class="text-[10px] text-emerald-400">Đang hoạt động</p>
+              <p
+                class="text-[10px] transition"
+                :class="store.isUserOnline(activeChat.targetUser.id) ? 'text-emerald-400' : 'text-slate-500'"
+              >
+                {{ store.getUserStatusLabel(activeChat.targetUser.id, activeChat.targetUser.lastSeenAt) }}
+              </p>
             </div>
             <!-- Gọi video -->
             <button class="flex h-9 w-9 items-center justify-center rounded-full text-indigo-400 hover:bg-indigo-950/40 transition" title="Gọi video" @click="startCall">
               <Video class="h-5 w-5" />
             </button>
+            <!-- Menu cuộc hội thoại -->
+            <div class="relative">
+              <button
+                class="flex h-9 w-9 items-center justify-center rounded-full text-slate-400 hover:bg-slate-800 hover:text-slate-200 transition"
+                title="Tùy chọn"
+                @click="showChatMenu = !showChatMenu"
+              >
+                <MoreVertical class="h-4 w-4" />
+              </button>
+              <div v-if="showChatMenu" class="absolute right-0 top-full mt-1 w-44 rounded-2xl border border-slate-700 bg-slate-900 p-1 shadow-xl z-30">
+                <button
+                  class="flex w-full items-center gap-2.5 rounded-xl px-3 py-2 text-left text-xs text-rose-400 hover:bg-rose-950/40 transition"
+                  @click="deleteConversation"
+                >
+                  <Trash2 class="h-3.5 w-3.5" /> Xóa cuộc trò chuyện
+                </button>
+              </div>
+            </div>
           </div>
 
           <!-- Messages -->

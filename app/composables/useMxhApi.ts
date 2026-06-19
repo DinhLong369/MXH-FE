@@ -160,6 +160,31 @@ export function useMxhApi() {
           query,
         })
       },
+
+      deleteConversation(accessToken: string, conversationId: string) {
+        const endpoint = MXH_API_ENDPOINTS.chat.deleteConversation
+        return request<ApiMessageResponse>(endpoint.path(conversationId), {
+          method: endpoint.method,
+          headers: authHeaders(accessToken),
+        })
+      },
+
+      updateMessage<TData = unknown>(accessToken: string, conversationId: string, messageId: string, payload: { content: string }) {
+        const endpoint = MXH_API_ENDPOINTS.chat.updateMessage
+        return request<MessageListResponse<TData>>(endpoint.path(conversationId, messageId), {
+          method: endpoint.method,
+          headers: authHeaders(accessToken),
+          body: payload,
+        })
+      },
+
+      deleteMessage(accessToken: string, conversationId: string, messageId: string) {
+        const endpoint = MXH_API_ENDPOINTS.chat.deleteMessage
+        return request<ApiMessageResponse>(endpoint.path(conversationId, messageId), {
+          method: endpoint.method,
+          headers: authHeaders(accessToken),
+        })
+      },
     },
 
     media: {

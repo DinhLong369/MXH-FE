@@ -127,6 +127,7 @@ interface SocialState {
   toast: string | null
   activeChatInMessenger: string | null
   remoteProfiles: UserProfile[]
+  onlineUserIds: string[]
 }
 
 export const useSocialStore = defineStore('social', {
@@ -148,10 +149,27 @@ export const useSocialStore = defineStore('social', {
     toast: null,
     activeChatInMessenger: null,
     remoteProfiles: [],
+    onlineUserIds: [],
   }),
 
   getters: {
     unreadMessagesCount: (s) => s.chats.reduce((acc, c) => acc + c.unreadCount, 0),
+    isUserOnline: (s) => (userId: string) => s.onlineUserIds.includes(userId),
+    getUserStatusLabel: (s) => (userId: string, lastSeenAt?: string): string => {
+      if (s.onlineUserIds.includes(userId)) return 'Đang hoạt động'
+      const ts = lastSeenAt
+      if (!ts) return 'Không hoạt động'
+      const diff = Date.now() - new Date(ts).getTime()
+      const mins = Math.floor(diff / 60000)
+      if (mins < 1) return 'Vừa hoạt động xong'
+      if (mins < 60) return `Hoạt động ${mins} phút trước`
+      const hrs = Math.floor(mins / 60)
+      if (hrs < 24) return `Hoạt động ${hrs} giờ trước`
+      const days = Math.floor(hrs / 24)
+      if (days === 1) return 'Hoạt động hôm qua'
+      if (days < 7) return `Hoạt động ${days} ngày trước`
+      return 'Lâu rồi không hoạt động'
+    },
     unreadNotificationsCount: (s) => s.notifications.filter((n) => !n.read).length,
     followedBots: (s) => s.bots.filter((b) => b.isFollowed),
     filteredPosts: (s) =>
@@ -845,6 +863,7 @@ export const useSocialStore = defineStore('social', {
         ['avatar', 'avatar_url', 'image'],
         'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=150&q=80',
       )
+      const lastSeenAt = getString(participant, ['last_seen_at', 'lastSeenAt']) || undefined
       const lastMessage = getString(item, ['last_message', 'lastMessage', 'message'], '')
       const updatedAt = getString(item, ['updated_at', 'last_message_at', 'created_at'])
 
@@ -860,6 +879,7 @@ export const useSocialStore = defineStore('social', {
           followersCount: 0,
           followingCount: 0,
           postsCount: 0,
+          lastSeenAt,
         },
         unreadCount: Number(item.unread_count || item.unreadCount || 0),
         messages: [],
@@ -1057,7 +1077,8 @@ export const useSocialStore = defineStore('social', {
     },
 
     // Sửa nội dung tin nhắn
-    editMessage(chatId: string, msgId: string, newText: string) {
+    async editMessage(chatId: string, msgId: string, newText: string) {
+      // Optimistic update
       this.saveChats(
         this.chats.map((c) => {
           if (c.id !== chatId) return c
@@ -1068,10 +1089,21 @@ export const useSocialStore = defineStore('social', {
           return { ...c, messages, lastMessage: last?.text ?? c.lastMessage }
         }),
       )
+      // Persist to API for real conversations (UUID message IDs)
+      if (isUuidFormat(chatId) && isUuidFormat(msgId)) {
+        try {
+          const auth = useAuthStore()
+          const token = auth.getAccessToken()
+          if (token) await useMxhApi().chat.updateMessage(token, chatId, msgId, { content: newText })
+        } catch (err) {
+          console.warn('editMessage API error:', err)
+        }
+      }
     },
 
-    // Xóa tin nhắn (của mình hoặc của người khác)
-    deleteMessage(chatId: string, msgId: string) {
+    // Xóa tin nhắn
+    async deleteMessage(chatId: string, msgId: string) {
+      // Optimistic update
       this.saveChats(
         this.chats.map((c) => {
           if (c.id !== chatId) return c
@@ -1080,6 +1112,33 @@ export const useSocialStore = defineStore('social', {
           return { ...c, messages, lastMessage: last?.text ?? '' }
         }),
       )
+      // Persist to API for real conversations
+      if (isUuidFormat(chatId) && isUuidFormat(msgId)) {
+        try {
+          const auth = useAuthStore()
+          const token = auth.getAccessToken()
+          if (token) await useMxhApi().chat.deleteMessage(token, chatId, msgId)
+        } catch (err) {
+          console.warn('deleteMessage API error:', err)
+        }
+      }
+    },
+
+    // Xóa cuộc hội thoại
+    async deleteConversation(chatId: string) {
+      // Remove locally first
+      this.saveChats(this.chats.filter((c) => c.id !== chatId))
+      if (this.activeChatInMessenger === chatId) this.activeChatInMessenger = null
+      // Call API for real conversations
+      if (isUuidFormat(chatId)) {
+        try {
+          const auth = useAuthStore()
+          const token = auth.getAccessToken()
+          if (token) await useMxhApi().chat.deleteConversation(token, chatId)
+        } catch (err) {
+          console.warn('deleteConversation API error:', err)
+        }
+      }
     },
 
     // Thả biểu cảm cho tin nhắn
@@ -1214,6 +1273,16 @@ export const useSocialStore = defineStore('social', {
     handleWsEvent(event: Record<string, unknown>) {
       const type = event.type as string
 
+      // ── Kết nối thành công: nhận danh sách người đang online ──
+      if (type === 'connected') {
+        const data = asRecord(event.data)
+        const onlineList = data?.online_users
+        if (Array.isArray(onlineList)) {
+          this.onlineUserIds = onlineList.map((id) => String(id))
+        }
+        return
+      }
+
       // ── Tin nhắn mới ──
       if (type === 'message') {
         const data = asRecord(event.data)
@@ -1266,6 +1335,69 @@ export const useSocialStore = defineStore('social', {
             icon: chat?.targetUser.avatar,
             tag: conversationId,
           })
+        }
+        return
+      }
+
+      // ── Tin nhắn bị sửa ──
+      if (type === 'message_updated') {
+        const data = asRecord(event.data)
+        const conversationId = (event.conversation_id as string) || getString(data, ['conversation_id'])
+        if (!data || !conversationId) return
+        const msg = this.mapApiMessage(data, conversationId)
+        if (!msg) return
+        this.saveChats(
+          this.chats.map((c) => {
+            if (c.id !== conversationId) return c
+            return {
+              ...c,
+              messages: c.messages.map((m) => (m.id === msg.id ? { ...m, text: msg.text, edited: true } : m)),
+            }
+          }),
+        )
+        return
+      }
+
+      // ── Tin nhắn bị xóa ──
+      if (type === 'message_deleted') {
+        const data = asRecord(event.data)
+        const conversationId = (event.conversation_id as string) || getString(data, ['conversation_id'])
+        const messageId = getString(data, ['message_id'])
+        if (!conversationId || !messageId) return
+        this.saveChats(
+          this.chats.map((c) => {
+            if (c.id !== conversationId) return c
+            const messages = c.messages.filter((m) => m.id !== messageId)
+            const last = messages[messages.length - 1]
+            return { ...c, messages, lastMessage: last?.text ?? '' }
+          }),
+        )
+        return
+      }
+
+      // ── Người dùng online ──
+      if (type === 'user_online') {
+        const data = asRecord(event.data)
+        const userId = getString(data, ['user_id'])
+        if (userId && !this.onlineUserIds.includes(userId)) {
+          this.onlineUserIds = [...this.onlineUserIds, userId]
+        }
+        return
+      }
+
+      // ── Người dùng offline ──
+      if (type === 'user_offline') {
+        const data = asRecord(event.data)
+        const userId = getString(data, ['user_id'])
+        const lastSeenAt = getString(data, ['last_seen_at']) || new Date().toISOString()
+        if (userId) {
+          this.onlineUserIds = this.onlineUserIds.filter((id) => id !== userId)
+          // Cập nhật lastSeenAt trong targetUser của các chat liên quan
+          this.chats = this.chats.map((c) =>
+            c.targetUser.id === userId
+              ? { ...c, targetUser: { ...c.targetUser, lastSeenAt } }
+              : c,
+          )
         }
         return
       }

@@ -53,6 +53,18 @@ export const MXH_API_ENDPOINTS = {
       method: 'GET',
       path: (id: string) => `/api/conversations/${encodeURIComponent(id)}/messages.json`,
     },
+    deleteConversation: {
+      method: 'DELETE' as const,
+      path: (id: string) => `/api/conversations/${encodeURIComponent(id)}.json`,
+    },
+    updateMessage: {
+      method: 'PATCH' as const,
+      path: (convId: string, msgId: string) => `/api/conversations/${encodeURIComponent(convId)}/messages/${encodeURIComponent(msgId)}.json`,
+    },
+    deleteMessage: {
+      method: 'DELETE' as const,
+      path: (convId: string, msgId: string) => `/api/conversations/${encodeURIComponent(convId)}/messages/${encodeURIComponent(msgId)}.json`,
+    },
   },
   media: {
     upload: {

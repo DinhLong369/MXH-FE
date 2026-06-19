@@ -26,10 +26,9 @@ export interface UserProfile {
   followingCount: number
   postsCount: number
   isFollowed?: boolean
-  // Phong cách bình luận của bot (dùng cho prompt AI)
   commentStyle?: string
-  // Đánh dấu tài khoản người thật (false) hay bot AI
   isAI?: boolean
+  lastSeenAt?: string
 }
 
 export interface PostComment {
