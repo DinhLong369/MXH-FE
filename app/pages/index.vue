@@ -3,7 +3,15 @@ const store = useSocialStore()
 const { currentTab, isGlobalLoading, isCreateModalOpen, toast } = storeToRefs(store)
 
 // App dựa hoàn toàn vào localStorage → hydrate phía client
-onMounted(() => store.hydrate())
+onMounted(async () => {
+  store.hydrate()
+  await store.syncChatsFromApi()
+  store.connectWebSocket()
+})
+
+onUnmounted(() => {
+  store.disconnectWebSocket()
+})
 
 const showRightBar = computed(() =>
   ['home', 'explore', 'profile'].includes(currentTab.value),
@@ -26,8 +34,8 @@ const showRightBar = computed(() =>
     <ClientOnly>
       <div class="h-screen w-full max-w-7xl mx-auto flex flex-col relative z-10 overflow-hidden">
         <!-- Top search bar (kiểu Facebook) -->
-        <header class="relative z-50 shrink-0 flex items-center gap-3 px-4 py-2.5 backdrop-glass">
-          <div class="flex md:hidden items-center gap-2 shrink-0">
+        <header class="relative z-50 shrink-0 flex items-center justify-center gap-3 px-4 py-2.5">
+          <div class="absolute left-4 flex md:hidden items-center gap-2 shrink-0">
             <div class="flex h-8 w-8 items-center justify-center rounded-xl bg-gradient-to-br from-indigo-500 to-violet-600">
               <span class="text-white font-extrabold text-sm">L</span>
             </div>

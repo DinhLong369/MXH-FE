@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import {
-  Send, MessageCircle, ArrowLeft, SmilePlus, Pencil, Trash2, Check, X,
+  Send, MessageCircle, ArrowLeft, ArrowDown, SmilePlus, Pencil, Trash2, Check, X,
   Image as ImageIcon, Copy, Mic, Video, MapPin, Smile, Film, Plus, PhoneOff,
   SquarePen, Search,
 } from 'lucide-vue-next'
@@ -16,6 +16,8 @@ const isBotTyping = ref(false)
 const scrollEl = ref<HTMLElement | null>(null)
 const fileInput = ref<HTMLInputElement | null>(null)
 const isUploading = ref(false)
+const showJumpToLatest = ref(false)
+const hasNewInActiveChat = ref(false)
 
 // Sửa / biểu cảm tin nhắn
 const editingId = ref<string | null>(null)
@@ -179,7 +181,26 @@ async function copyMessage(msg: Message) {
 
 async function scrollToBottom() {
   await nextTick()
-  if (scrollEl.value) scrollEl.value.scrollTop = scrollEl.value.scrollHeight
+  if (scrollEl.value) {
+    scrollEl.value.scrollTop = scrollEl.value.scrollHeight
+    showJumpToLatest.value = false
+    hasNewInActiveChat.value = false
+    if (activeChat.value) store.markChatRead(activeChat.value.id)
+  }
+}
+
+function isNearBottom(offset = 96) {
+  const el = scrollEl.value
+  if (!el) return true
+  return el.scrollHeight - el.scrollTop - el.clientHeight <= offset
+}
+
+function onMessagesScroll() {
+  if (isNearBottom()) {
+    showJumpToLatest.value = false
+    hasNewInActiveChat.value = false
+    if (activeChat.value) store.markChatRead(activeChat.value.id)
+  }
 }
 
 // ---------- Gửi tin nhắn ----------
@@ -217,7 +238,6 @@ async function botReply(chat: Chat, contextText: string) {
     store.receiveBotReply(chat.id, 'Mình đã nhận được tin nhắn của bạn rồi nha! 💬')
   } finally {
     isBotTyping.value = false
-    await scrollToBottom()
   }
 }
 
@@ -391,9 +411,27 @@ function timeLabel(iso: string): string {
 }
 
 watch(activeChatId, (id) => {
+  showJumpToLatest.value = false
+  hasNewInActiveChat.value = false
   scrollToBottom()
   if (id) store.setActiveChatInMessenger(id)
 })
+
+watch(
+  () => activeChat.value?.messages.length ?? 0,
+  async (len, oldLen) => {
+    if (!activeChat.value || !oldLen || len <= oldLen) return
+    const latest = activeChat.value.messages[activeChat.value.messages.length - 1]
+    const wasNearBottom = isNearBottom()
+    await nextTick()
+    if (latest?.sender === 'me' || wasNearBottom) {
+      await scrollToBottom()
+      return
+    }
+    showJumpToLatest.value = true
+    hasNewInActiveChat.value = true
+  },
+)
 
 onMounted(async () => {
   await store.syncChatsFromApi()
@@ -406,7 +444,6 @@ onMounted(async () => {
   await scrollToBottom()
 })
 onUnmounted(() => {
-  store.disconnectWebSocket()
   store.setActiveChatInMessenger(null)
   if (recordTimer) clearInterval(recordTimer)
   if (searchDebounce) clearTimeout(searchDebounce)
@@ -516,7 +553,10 @@ onUnmounted(() => {
       <div class="flex-1 flex-col min-h-0 relative" :class="activeChat ? 'flex' : 'hidden md:flex'">
         <template v-if="activeChat">
           <!-- Header -->
-          <div class="flex items-center gap-3 px-4 py-3 border-b border-slate-800 shrink-0">
+          <div
+            class="flex items-center gap-3 px-4 py-3 border-b border-slate-800 shrink-0 transition"
+            :class="hasNewInActiveChat ? 'bg-indigo-950/20 shadow-[0_0_32px_rgba(99,102,241,0.12)]' : ''"
+          >
             <button class="md:hidden text-slate-400" @click="activeChatId = null">
               <ArrowLeft class="h-5 w-5" />
             </button>
@@ -532,7 +572,7 @@ onUnmounted(() => {
           </div>
 
           <!-- Messages -->
-          <div ref="scrollEl" class="flex-1 overflow-y-auto thin-scrollbar min-h-0 p-4 space-y-3" @click="closePanels">
+          <div ref="scrollEl" class="flex-1 overflow-y-auto thin-scrollbar min-h-0 p-4 space-y-3" @click="closePanels" @scroll="onMessagesScroll">
             <div v-for="msg in activeChat.messages" :key="msg.id">
               <div class="group/msg flex items-end gap-1.5" :class="msg.sender === 'me' ? 'justify-end' : 'justify-start'">
                 <!-- Hành động (trái) cho tin của mình -->
@@ -676,6 +716,15 @@ onUnmounted(() => {
               </div>
             </div>
           </div>
+
+          <button
+            v-if="showJumpToLatest"
+            class="absolute bottom-24 left-1/2 z-30 flex -translate-x-1/2 items-center gap-2 rounded-full border border-indigo-400/40 bg-indigo-600 px-4 py-2 text-xs font-extrabold text-white shadow-2xl shadow-indigo-950/60 transition hover:bg-indigo-500"
+            @click="scrollToBottom"
+          >
+            <ArrowDown class="h-4 w-4" />
+            <span>Tin nhắn mới</span>
+          </button>
 
           <!-- Bảng sticker / gif -->
           <div v-if="showStickerPanel" class="shrink-0 border-t border-slate-800 bg-slate-900/60 px-3 pt-2 pb-1">

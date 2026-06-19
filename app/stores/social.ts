@@ -77,6 +77,38 @@ function detectMediaKind(text: string): 'image' | 'gif' | null {
   return null
 }
 
+const LOCATION_PREFIX = '__lh_location__:'
+
+function encodeLocationPayload(location: Message['location']) {
+  return `${LOCATION_PREFIX}${JSON.stringify(location || { label: 'Vị trí đã chia sẻ' })}`
+}
+
+function decodeLocationPayload(text: string): Message['location'] | null {
+  if (!text.startsWith(LOCATION_PREFIX)) return null
+  try {
+    const parsed = JSON.parse(text.slice(LOCATION_PREFIX.length)) as Message['location']
+    return parsed?.label ? parsed : { label: 'Vị trí đã chia sẻ' }
+  } catch {
+    return { label: 'Vị trí đã chia sẻ' }
+  }
+}
+
+function messagePreview(msg: Pick<Message, 'text' | 'kind' | 'image' | 'location' | 'voiceDuration'>) {
+  if (msg.text) return msg.text
+  if (msg.kind === 'image') return '📷 Hình ảnh'
+  if (msg.kind === 'gif') return 'GIF'
+  if (msg.kind === 'sticker') return 'Nhãn dán'
+  if (msg.kind === 'voice') return '🎤 Tin nhắn thoại'
+  if (msg.kind === 'location') return `📍 ${msg.location?.label || 'Vị trí'}`
+  return ''
+}
+
+function messageTransportContent(msg: Message) {
+  if (msg.kind === 'location') return encodeLocationPayload(msg.location)
+  if (msg.kind === 'voice') return `[Tin nhắn thoại ${msg.voiceDuration || 0}s]`
+  return msg.image || msg.text
+}
+
 interface SocialState {
   currentTab: string
   posts: Post[]
@@ -94,6 +126,7 @@ interface SocialState {
   highlightPostId: string | null
   toast: string | null
   activeChatInMessenger: string | null
+  remoteProfiles: UserProfile[]
 }
 
 export const useSocialStore = defineStore('social', {
@@ -114,6 +147,7 @@ export const useSocialStore = defineStore('social', {
     highlightPostId: null,
     toast: null,
     activeChatInMessenger: null,
+    remoteProfiles: [],
   }),
 
   getters: {
@@ -128,6 +162,8 @@ export const useSocialStore = defineStore('social', {
       if (!s.viewingUserId || s.viewingUserId === s.currentUser.id) return s.currentUser
       const bot = s.bots.find((b) => b.id === s.viewingUserId)
       if (bot) return bot
+      const remote = s.remoteProfiles.find((u) => u.id === s.viewingUserId)
+      if (remote) return remote
       const p = s.posts.find((x) => x.userId === s.viewingUserId)
       if (p) {
         return {
@@ -354,9 +390,8 @@ export const useSocialStore = defineStore('social', {
       if (import.meta.client) localStorage.setItem(LS.tab, tab)
       // Reset hồ sơ đang xem khi điều hướng (vào tab profile = xem bản thân)
       this.viewingUserId = null
-      // Vào messenger thì xóa badge chưa đọc + xin quyền thông báo thiết bị
+      // Vào messenger thì xin quyền thông báo thiết bị; từng hội thoại tự đánh dấu đọc khi mở.
       if (tab === 'messenger') {
-        this.saveChats(this.chats.map((c) => ({ ...c, unreadCount: 0 })))
         this.ensureNotificationPermission()
       }
     },
@@ -402,6 +437,28 @@ export const useSocialStore = defineStore('social', {
     viewProfile(userId: string) {
       this.viewingUserId = userId === this.currentUser.id ? null : userId
       this.currentTab = 'profile'
+    },
+
+    viewRemoteProfile(user: ApiUserResult) {
+      const profile: UserProfile = {
+        id: user.id,
+        name: user.name || user.username || 'Người dùng',
+        username: user.username || user.email || user.id,
+        avatar:
+          user.avatar ||
+          'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=200&q=80',
+        cover:
+          'https://images.unsplash.com/photo-1519681393784-d120267933ba?auto=format&fit=crop&w=1200&q=80',
+        bio: user.email
+          ? `Thành viên của LongHieu Chanel. Email liên hệ: ${user.email}`
+          : 'Thành viên của LongHieu Chanel.',
+        followersCount: 0,
+        followingCount: 0,
+        postsCount: 0,
+        isAI: false,
+      }
+      this.remoteProfiles = [profile, ...this.remoteProfiles.filter((p) => p.id !== profile.id)].slice(0, 20)
+      this.viewProfile(profile.id)
     },
 
     // Bấm thông báo → nhảy tới bài viết
@@ -821,14 +878,16 @@ export const useSocialStore = defineStore('social', {
       const auth = useAuthStore()
       const myId = auth.getApiUserId()
       const isMine = senderId !== '' && (senderId === myId || senderId === this.currentUser.id)
-      const mediaKind = detectMediaKind(text)
+      const location = decodeLocationPayload(text)
+      const mediaKind = location ? null : detectMediaKind(text)
       return {
         id,
         chatId,
         sender: isMine ? 'me' : 'them',
-        text: mediaKind ? '' : text,
-        kind: mediaKind || undefined,
+        text: mediaKind || location ? '' : text,
+        kind: location ? 'location' : mediaKind || undefined,
         image: mediaKind ? text : undefined,
+        location: location || undefined,
         createdAt: getString(item, ['created_at', 'updated_at'], new Date().toISOString()),
       }
     },
@@ -902,19 +961,7 @@ export const useSocialStore = defineStore('social', {
         ...extra,
       }
       // Nhãn hiển thị trong danh sách chat theo loại tin
-      const preview =
-        text ||
-        (msg.kind === 'image'
-          ? '📷 Hình ảnh'
-          : msg.kind === 'gif'
-            ? 'GIF'
-            : msg.kind === 'sticker'
-              ? 'Nhãn dán'
-              : msg.kind === 'voice'
-                ? '🎤 Tin nhắn thoại'
-                : msg.kind === 'location'
-                  ? '📍 Vị trí'
-                  : '')
+      const preview = messagePreview(msg)
       this.saveChats(
         this.chats.map((c) =>
           c.id === chatId
@@ -929,7 +976,7 @@ export const useSocialStore = defineStore('social', {
         wsConn.send(JSON.stringify({
           type: 'send_message',
           conversation_id: chatId,
-          content: msg.image || text,
+          content: messageTransportContent(msg),
         }))
       }
     },
@@ -958,7 +1005,10 @@ export const useSocialStore = defineStore('social', {
         text: replyText,
         createdAt: new Date().toISOString(),
       }
-      const isInChatTab = this.currentTab === 'messenger'
+      const isActivelyReading =
+        this.currentTab === 'messenger' &&
+        this.activeChatInMessenger === chatId &&
+        !(import.meta.client && document.hidden)
       this.saveChats(
         this.chats.map((c) =>
           c.id === chatId
@@ -971,7 +1021,7 @@ export const useSocialStore = defineStore('social', {
                 ],
                 lastMessage: replyText,
                 lastMessageTime: 'Vừa xong',
-                unreadCount: isInChatTab ? 0 : c.unreadCount + 1,
+                unreadCount: isActivelyReading ? 0 : c.unreadCount + 1,
               }
             : c,
         ),
@@ -979,10 +1029,10 @@ export const useSocialStore = defineStore('social', {
 
       // Thông báo khi không ở trong cuộc trò chuyện, hoặc app đang chạy nền
       const appHidden = import.meta.client && document.hidden
-      if (!isInChatTab || appHidden) {
+      if (!isActivelyReading || appHidden) {
         const activeChat = this.chats.find((c) => c.id === chatId)
         if (activeChat) {
-          if (!isInChatTab) {
+          if (!isActivelyReading) {
             this.saveNotifs([
               {
                 id: `notif-dm-${Date.now()}`,
@@ -1181,7 +1231,9 @@ export const useSocialStore = defineStore('social', {
         if (!msg) return
 
         const isActiveConversation =
-          this.currentTab === 'messenger' && this.activeChatInMessenger === conversationId
+          this.currentTab === 'messenger' &&
+          this.activeChatInMessenger === conversationId &&
+          !(import.meta.client && document.hidden)
 
         this.saveChats(
           this.chats.map((c) => {
@@ -1189,7 +1241,7 @@ export const useSocialStore = defineStore('social', {
             return {
               ...c,
               messages: [...c.messages, msg],
-              lastMessage: msg.text,
+              lastMessage: messagePreview(msg),
               lastMessageTime: 'Vừa xong',
               // Không tăng unread nếu đang xem conversation này
               unreadCount: isActiveConversation ? 0 : c.unreadCount + 1,
@@ -1206,8 +1258,14 @@ export const useSocialStore = defineStore('social', {
         if (!isActiveConversation) {
           const chat = this.chats.find((c) => c.id === conversationId)
           const senderName = chat?.targetUser.name || 'Tin nhắn mới'
-          const preview = msg.text.length > 35 ? msg.text.slice(0, 35) + '…' : msg.text
-          this.showToast(`💬 ${senderName}: ${preview}`)
+          const messageText = messagePreview(msg)
+          const preview = messageText.length > 35 ? messageText.slice(0, 35) + '…' : messageText
+          this.pushDeviceNotification({
+            title: senderName,
+            body: preview,
+            icon: chat?.targetUser.avatar,
+            tag: conversationId,
+          })
         }
         return
       }
