@@ -51,7 +51,7 @@ async function submit() {
           </div>
           <input v-model="username" type="text" placeholder="Tên tài khoản hoặc email" class="w-full rounded-2xl border border-slate-800 bg-slate-950/65 py-3.5 pl-10 pr-4 text-sm text-slate-100 placeholder-slate-500 focus:border-indigo-500/50 focus:outline-none focus:ring-1 focus:ring-indigo-500/20 transition">
         </div>
-      </div>
+      </div> 
 
       <div class="flex flex-col gap-1.5">
         <label class="text-xs font-bold text-slate-400 uppercase tracking-wider">Mật khẩu</label>
