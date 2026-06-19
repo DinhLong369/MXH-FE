@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { Send, MessageCircle, ArrowLeft, SmilePlus, Pencil, Trash2, Check, X } from 'lucide-vue-next'
+import { Send, MessageCircle, ArrowLeft, SmilePlus, Pencil, Trash2, Check, X, SquarePen, Search } from 'lucide-vue-next'
+import type { ApiUserResult } from '~/types/api'
 
 const store = useSocialStore()
 const { chats, currentUser } = storeToRefs(store)
@@ -15,11 +16,69 @@ const editText = ref('')
 const reactMenuId = ref<string | null>(null)
 const quickEmojis = ['👍', '❤️', '😆', '😮', '😢', '🙏']
 
+// Tìm kiếm người dùng mới
+const showSearch = ref(false)
+const searchQuery = ref('')
+const searchResults = ref<ApiUserResult[]>([])
+const searchLoading = ref(false)
+let searchDebounce: ReturnType<typeof setTimeout> | null = null
+
 const activeChat = computed(() => chats.value.find((c) => c.id === activeChatId.value) || null)
+
+function isUuid(id: string) {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)
+}
 
 function selectChat(id: string) {
   activeChatId.value = id
+  showSearch.value = false
+  store.setActiveChatInMessenger(id)
 }
+
+function openSearch() {
+  showSearch.value = true
+  searchQuery.value = ''
+  searchResults.value = []
+}
+
+function closeSearch() {
+  showSearch.value = false
+  searchQuery.value = ''
+  searchResults.value = []
+}
+
+function onSearchInput() {
+  if (searchDebounce) clearTimeout(searchDebounce)
+  const q = searchQuery.value.trim()
+  if (!q) {
+    searchResults.value = []
+    return
+  }
+  searchDebounce = setTimeout(async () => {
+    searchLoading.value = true
+    try {
+      searchResults.value = await store.searchUsersFromApi(q)
+    } finally {
+      searchLoading.value = false
+    }
+  }, 300)
+}
+
+async function startChatWith(user: ApiUserResult) {
+  closeSearch()
+  const chatId = await store.openOrCreateChat(user.id, {
+    name: user.name,
+    username: user.username,
+    avatar: user.avatar,
+  })
+  if (chatId) {
+    store.setTab('messenger')
+    activeChatId.value = chatId
+    store.setActiveChatInMessenger(chatId)
+    await scrollToBottom()
+  }
+}
+
 
 function startEdit(msgId: string, text: string) {
   editingId.value = msgId
@@ -57,30 +116,32 @@ async function send() {
   draft.value = ''
   await scrollToBottom()
 
-  // Bot trả lời theo ngữ cảnh
-  isBotTyping.value = true
-  try {
-    const data = await $fetch<{ text?: string; error?: string }>('/api/gemini/comment-reply', {
-      method: 'POST',
-      body: {
-        postContent: text,
-        authorName: currentUser.value.name,
-        botPersona: {
-          name: chat.targetUser.name,
-          bio: chat.targetUser.bio,
-          commentStyle: chat.targetUser.commentStyle || 'thân thiện, gần gũi',
+  // Chỉ kích hoạt bot reply cho chat bot (không phải real API conversation)
+  if (!isUuid(chat.id)) {
+    isBotTyping.value = true
+    try {
+      const data = await $fetch<{ text?: string; error?: string }>('/api/gemini/comment-reply', {
+        method: 'POST',
+        body: {
+          postContent: text,
+          authorName: currentUser.value.name,
+          botPersona: {
+            name: chat.targetUser.name,
+            bio: chat.targetUser.bio,
+            commentStyle: chat.targetUser.commentStyle || 'thân thiện, gần gũi',
+          },
         },
-      },
-    })
-    const reply = !data.error && data.text
-      ? data.text
-      : 'Cảm ơn bạn đã nhắn tin! Mình sẽ phản hồi chi tiết sớm nhé 😊 (cấu hình NUXT_GEMINI_API_KEY để bot trả lời thông minh hơn)'
-    store.receiveBotReply(chat.id, reply)
-  } catch {
-    store.receiveBotReply(chat.id, 'Mình đã nhận được tin nhắn của bạn rồi nha! 💬')
-  } finally {
-    isBotTyping.value = false
-    await scrollToBottom()
+      })
+      const reply = !data.error && data.text
+        ? data.text
+        : 'Cảm ơn bạn đã nhắn tin! Mình sẽ phản hồi chi tiết sớm nhé 😊'
+      store.receiveBotReply(chat.id, reply)
+    } catch {
+      store.receiveBotReply(chat.id, 'Mình đã nhận được tin nhắn của bạn rồi nha! 💬')
+    } finally {
+      isBotTyping.value = false
+      await scrollToBottom()
+    }
   }
 }
 
@@ -93,11 +154,26 @@ function timeLabel(iso: string): string {
   }
 }
 
-watch(activeChatId, scrollToBottom)
+watch(activeChatId, (id) => {
+  scrollToBottom()
+  if (id) store.setActiveChatInMessenger(id)
+})
+
 onMounted(async () => {
   await store.syncChatsFromApi()
-  if (!activeChatId.value && chats.value[0]) activeChatId.value = chats.value[0].id
+  store.connectWebSocket()
+  const firstId = chats.value[0]?.id ?? null
+  if (!activeChatId.value && firstId) {
+    activeChatId.value = firstId
+    store.setActiveChatInMessenger(firstId)
+  }
   await scrollToBottom()
+})
+
+onUnmounted(() => {
+  store.disconnectWebSocket()
+  store.setActiveChatInMessenger(null)
+  if (searchDebounce) clearTimeout(searchDebounce)
 })
 </script>
 
@@ -109,10 +185,67 @@ onMounted(async () => {
         class="w-full md:w-72 shrink-0 border-r border-slate-800 flex-col"
         :class="activeChat && 'hidden md:flex' || 'flex'"
       >
-        <div class="px-4 py-4 border-b border-slate-800">
+        <div class="px-4 py-3.5 border-b border-slate-800 flex items-center justify-between">
           <h2 class="text-sm font-bold text-slate-100">Tin nhắn</h2>
+          <button
+            class="flex h-7 w-7 items-center justify-center rounded-full text-slate-400 hover:bg-slate-700 hover:text-slate-100 transition"
+            title="Nhắn tin mới"
+            @click="openSearch"
+          >
+            <SquarePen class="h-4 w-4" />
+          </button>
         </div>
-        <div class="flex-1 overflow-y-auto thin-scrollbar">
+
+        <!-- Search panel -->
+        <div v-if="showSearch" class="flex flex-col flex-1 overflow-hidden">
+          <div class="p-3 border-b border-slate-800">
+            <div class="flex items-center gap-2 rounded-xl bg-slate-900 border border-slate-700 px-3 py-2 focus-within:border-indigo-500/50">
+              <Search class="h-3.5 w-3.5 text-slate-500 shrink-0" />
+              <input
+                v-model="searchQuery"
+                type="text"
+                placeholder="Tìm người dùng..."
+                class="flex-1 bg-transparent text-xs text-slate-200 placeholder-slate-500 focus:outline-none"
+                autofocus
+                @input="onSearchInput"
+                @keyup.esc="closeSearch"
+              >
+              <button class="text-slate-500 hover:text-slate-300" @click="closeSearch">
+                <X class="h-3.5 w-3.5" />
+              </button>
+            </div>
+          </div>
+          <div class="flex-1 overflow-y-auto thin-scrollbar">
+            <div v-if="searchLoading" class="flex items-center justify-center py-8 text-slate-500 text-xs gap-2">
+              <span class="h-1.5 w-1.5 rounded-full bg-slate-500 animate-bounce" style="animation-delay:0ms" />
+              <span class="h-1.5 w-1.5 rounded-full bg-slate-500 animate-bounce" style="animation-delay:150ms" />
+              <span class="h-1.5 w-1.5 rounded-full bg-slate-500 animate-bounce" style="animation-delay:300ms" />
+            </div>
+            <div v-else-if="searchQuery.trim() && !searchResults.length && !searchLoading" class="py-8 text-center text-slate-500 text-xs">
+              Không tìm thấy người dùng nào
+            </div>
+            <button
+              v-for="user in searchResults"
+              :key="user.id"
+              class="flex w-full items-center gap-3 px-4 py-3 text-left hover:bg-slate-800/60 border-b border-slate-800/50 transition"
+              @click="startChatWith(user)"
+            >
+              <img
+                :src="user.avatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=150&q=80'"
+                :alt="user.name"
+                class="h-10 w-10 rounded-full object-cover shrink-0"
+                referrerpolicy="no-referrer"
+              >
+              <div class="flex-1 overflow-hidden">
+                <p class="text-xs font-semibold text-slate-100 truncate">{{ user.name || user.username }}</p>
+                <p class="text-[10px] text-slate-400 truncate">@{{ user.username }}</p>
+              </div>
+            </button>
+          </div>
+        </div>
+
+        <!-- Normal chat list -->
+        <div v-else class="flex-1 overflow-y-auto thin-scrollbar">
           <button
             v-for="chat in chats"
             :key="chat.id"
@@ -126,12 +259,18 @@ onMounted(async () => {
             </div>
             <div class="flex-1 overflow-hidden">
               <div class="flex items-center justify-between">
-                <p class="text-xs font-bold text-slate-100 truncate">{{ chat.targetUser.name }}</p>
+                <p
+                  class="text-xs truncate"
+                  :class="chat.unreadCount > 0 ? 'font-extrabold text-white' : 'font-bold text-slate-100'"
+                >{{ chat.targetUser.name }}</p>
                 <span class="text-[9px] text-slate-500 shrink-0">{{ chat.lastMessageTime }}</span>
               </div>
-              <p class="text-[11px] text-slate-400 truncate">{{ chat.lastMessage }}</p>
+              <p
+                class="text-[11px] truncate"
+                :class="chat.unreadCount > 0 ? 'font-semibold text-slate-200' : 'text-slate-400'"
+              >{{ chat.lastMessage }}</p>
             </div>
-            <span v-if="chat.unreadCount > 0" class="flex h-5 min-w-5 items-center justify-center rounded-full bg-rose-500 px-1.5 text-[10px] font-bold text-white">
+            <span v-if="chat.unreadCount > 0" class="flex h-5 min-w-5 items-center justify-center rounded-full bg-rose-500 px-1.5 text-[10px] font-bold text-white shrink-0">
               {{ chat.unreadCount }}
             </span>
           </button>
@@ -222,6 +361,17 @@ onMounted(async () => {
                   <span class="h-1.5 w-1.5 rounded-full bg-slate-500 animate-bounce" style="animation-delay:300ms" />
                 </span>
               </div>
+            </div>
+
+            <!-- Đã xem: hiện ở cuối danh sách khi người kia đã đọc -->
+            <div v-if="activeChat?.lastSeenAt" class="flex justify-end items-center gap-1 pt-0.5 pr-1">
+              <span class="text-[9px] text-slate-500">Đã xem</span>
+              <img
+                :src="activeChat.targetUser.avatar"
+                :alt="activeChat.targetUser.name"
+                class="h-4 w-4 rounded-full object-cover ring-1 ring-slate-700"
+                referrerpolicy="no-referrer"
+              >
             </div>
           </div>
 

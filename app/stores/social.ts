@@ -9,7 +9,15 @@ import type {
   ReactionType,
   UserProfile,
 } from '~/types'
+import type { ApiUserResult } from '~/types/api'
 import { AI_BOTS, GROUPS, INITIAL_POSTS, ME_USER } from '~/data'
+
+// WebSocket connection (module-level, not reactive)
+let wsConn: WebSocket | null = null
+
+function isUuidFormat(id: string): boolean {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)
+}
 
 // Khóa localStorage
 const LS = {
@@ -71,6 +79,7 @@ interface SocialState {
   viewingUserId: string | null
   highlightPostId: string | null
   toast: string | null
+  activeChatInMessenger: string | null
 }
 
 export const useSocialStore = defineStore('social', {
@@ -90,6 +99,7 @@ export const useSocialStore = defineStore('social', {
     viewingUserId: null,
     highlightPostId: null,
     toast: null,
+    activeChatInMessenger: null,
   }),
 
   getters: {
@@ -311,9 +321,9 @@ export const useSocialStore = defineStore('social', {
       this.currentTab = tab
       // Reset hồ sơ đang xem khi điều hướng (vào tab profile = xem bản thân)
       this.viewingUserId = null
-      // Vào messenger thì xóa badge chưa đọc
-      if (tab === 'messenger') {
-        this.saveChats(this.chats.map((c) => ({ ...c, unreadCount: 0 })))
+      if (tab !== 'messenger') {
+        // Rời messenger → clear active chat
+        this.activeChatInMessenger = null
       }
     },
 
@@ -665,15 +675,40 @@ export const useSocialStore = defineStore('social', {
       const item = asRecord(raw)
       if (!item) return null
 
-      const participant =
-        asRecord(item.user) ||
-        asRecord(item.target_user) ||
-        asRecord(item.receiver) ||
-        asRecord(item.participant) ||
-        asRecord(item.other_user)
       const id = getString(item, ['id', '_id', 'conversation_id'])
-      const targetId = getString(participant, ['id', '_id', 'user_id'], getString(item, ['user_id']))
       if (!id) return null
+
+      // Find the other participant from the members array (exclude self)
+      const auth = useAuthStore()
+      const myUserId = auth.getApiUserId()
+
+      let participant: RemoteRecord | null = null
+      let targetId = ''
+      const members = getArray(item.members || item.Members)
+      for (const member of members) {
+        const m = asRecord(member)
+        if (!m) continue
+        const uid = getString(m, ['user_id', 'UserID'])
+        if (uid && uid !== myUserId) {
+          participant = asRecord(m.user || m.User) || m
+          targetId = uid
+          break
+        }
+      }
+
+      // Fallback to legacy field patterns
+      if (!participant) {
+        participant =
+          asRecord(item.user) ||
+          asRecord(item.target_user) ||
+          asRecord(item.receiver) ||
+          asRecord(item.participant) ||
+          asRecord(item.other_user) ||
+          null
+        if (!targetId) {
+          targetId = getString(participant, ['id', '_id', 'user_id'], getString(item, ['user_id']))
+        }
+      }
 
       const name = getString(participant, ['name', 'username', 'email'], 'Người dùng')
       const username = getString(participant, ['username', 'email'], name)
@@ -712,10 +747,13 @@ export const useSocialStore = defineStore('social', {
       const text = getString(item, ['text', 'content', 'message', 'body'])
       if (!text) return null
       const senderId = getString(item, ['sender_id', 'user_id', 'from'])
+      const auth = useAuthStore()
+      const myId = auth.getApiUserId()
+      const isMine = senderId !== '' && (senderId === myId || senderId === this.currentUser.id)
       return {
         id,
         chatId,
-        sender: senderId && senderId === this.currentUser.id ? 'me' : 'them',
+        sender: isMine ? 'me' : 'them',
         text,
         createdAt: getString(item, ['created_at', 'updated_at'], new Date().toISOString()),
       }
@@ -749,6 +787,7 @@ export const useSocialStore = defineStore('social', {
               const apiMessages = getArray(messages.data)
                 .map((item) => this.mapApiMessage(item, chat.id))
                 .filter((message): message is Message => Boolean(message))
+                .reverse() // API trả về DESC (mới→cũ), reverse để hiển thị đúng cũ→mới
               if (!apiMessages.length) return chat
               const last = apiMessages[apiMessages.length - 1]
               return {
@@ -785,6 +824,15 @@ export const useSocialStore = defineStore('social', {
             : c,
         ),
       )
+
+      // Send via WebSocket for real API conversations
+      if (isUuidFormat(chatId) && wsConn?.readyState === WebSocket.OPEN) {
+        wsConn.send(JSON.stringify({
+          type: 'send_message',
+          conversation_id: chatId,
+          content: text,
+        }))
+      }
     },
 
     receiveBotReply(chatId: string, replyText: string) {
@@ -941,6 +989,229 @@ export const useSocialStore = defineStore('social', {
     },
     clearNotifications() {
       this.saveNotifs([])
+    },
+
+    // ========================================================
+    // L. WebSocket realtime
+    // ========================================================
+    connectWebSocket() {
+      if (!import.meta.client) return
+      const auth = useAuthStore()
+      const token = auth.getAccessToken()
+      if (!token) return
+      if (wsConn?.readyState === WebSocket.OPEN || wsConn?.readyState === WebSocket.CONNECTING) return
+
+      const config = useRuntimeConfig()
+      const base = (config.public.apiBaseUrl as string).replace(/\/$/, '').replace(/\/api$/, '')
+      const wsBase = base.replace(/^https/, 'wss').replace(/^http/, 'ws')
+
+      wsConn = new WebSocket(`${wsBase}/ws/chat?token=${encodeURIComponent(token)}`)
+
+      wsConn.onmessage = (event: MessageEvent) => {
+        try {
+          const data = JSON.parse(event.data as string) as Record<string, unknown>
+          this.handleWsEvent(data)
+        } catch {
+          // ignore parse errors
+        }
+      }
+
+      wsConn.onerror = () => {
+        wsConn = null
+      }
+
+      wsConn.onclose = () => {
+        wsConn = null
+      }
+    },
+
+    disconnectWebSocket() {
+      if (wsConn) {
+        wsConn.close()
+        wsConn = null
+      }
+    },
+
+    handleWsEvent(event: Record<string, unknown>) {
+      const type = event.type as string
+
+      // ── Tin nhắn mới ──
+      if (type === 'message') {
+        const data = asRecord(event.data)
+        const conversationId = (event.conversation_id as string) || getString(data, ['conversation_id'])
+        if (!data || !conversationId) return
+
+        const auth = useAuthStore()
+        const myId = auth.getApiUserId()
+        const senderId = getString(data, ['sender_id'])
+
+        // Bỏ qua echo tin của chính mình (đã thêm optimistically)
+        if (senderId && senderId === myId) return
+
+        const msg = this.mapApiMessage(data, conversationId)
+        if (!msg) return
+
+        const isActiveConversation =
+          this.currentTab === 'messenger' && this.activeChatInMessenger === conversationId
+
+        this.saveChats(
+          this.chats.map((c) => {
+            if (c.id !== conversationId) return c
+            return {
+              ...c,
+              messages: [...c.messages, msg],
+              lastMessage: msg.text,
+              lastMessageTime: 'Vừa xong',
+              // Không tăng unread nếu đang xem conversation này
+              unreadCount: isActiveConversation ? 0 : c.unreadCount + 1,
+            }
+          }),
+        )
+
+        // Nếu đang xem conversation → auto gửi seen
+        if (isActiveConversation && wsConn?.readyState === WebSocket.OPEN) {
+          wsConn.send(JSON.stringify({ type: 'seen', conversation_id: conversationId }))
+        }
+
+        // Thông báo toast nếu không đang xem conversation này
+        if (!isActiveConversation) {
+          const chat = this.chats.find((c) => c.id === conversationId)
+          const senderName = chat?.targetUser.name || 'Tin nhắn mới'
+          const preview = msg.text.length > 35 ? msg.text.slice(0, 35) + '…' : msg.text
+          this.showToast(`💬 ${senderName}: ${preview}`)
+        }
+        return
+      }
+
+      // ── Đã xem ──
+      if (type === 'seen') {
+        const data = asRecord(event.data)
+        const conversationId = event.conversation_id as string
+        if (!conversationId) return
+
+        const auth = useAuthStore()
+        const myId = auth.getApiUserId()
+        const userId = getString(data, ['user_id'])
+
+        // Chỉ cập nhật khi người KHÁC đánh dấu đã xem
+        if (userId && userId !== myId) {
+          const time = getString(data, ['time']) || new Date().toISOString()
+          this.saveChats(
+            this.chats.map((c) =>
+              c.id === conversationId ? { ...c, lastSeenAt: time } : c,
+            ),
+          )
+        }
+      }
+    },
+
+    // Đánh dấu đã đọc: xóa unread + gửi seen WS
+    markChatRead(chatId: string) {
+      this.saveChats(
+        this.chats.map((c) => (c.id === chatId ? { ...c, unreadCount: 0 } : c)),
+      )
+      if (isUuidFormat(chatId) && wsConn?.readyState === WebSocket.OPEN) {
+        wsConn.send(JSON.stringify({ type: 'seen', conversation_id: chatId }))
+      }
+    },
+
+    // Ghi nhớ conversation đang mở trong Messenger
+    setActiveChatInMessenger(chatId: string | null) {
+      this.activeChatInMessenger = chatId
+      if (chatId) this.markChatRead(chatId)
+    },
+
+    // ========================================================
+    // M. Tìm kiếm người dùng + mở cuộc trò chuyện
+    // ========================================================
+    async searchUsersFromApi(query: string): Promise<ApiUserResult[]> {
+      if (!import.meta.client) return []
+      const auth = useAuthStore()
+      const accessToken = auth.getAccessToken()
+      if (!accessToken) return []
+      try {
+        const api = useMxhApi()
+        const res = await api.users.search(accessToken, { q: query })
+        if (!res.status) return []
+        return Array.isArray(res.data) ? res.data : []
+      } catch (error) {
+        console.warn('searchUsersFromApi error:', error)
+        return []
+      }
+    },
+
+    async openOrCreateChat(userId: string, userInfo?: { name?: string; username?: string; avatar?: string }): Promise<string | undefined> {
+      const auth = useAuthStore()
+      const accessToken = auth.getAccessToken()
+      if (!accessToken) {
+        this.showToast('Vui lòng đăng nhập để nhắn tin.')
+        return undefined
+      }
+
+      try {
+        const api = useMxhApi()
+        const res = await api.chat.createDirectConversation(accessToken, { user_id: userId })
+        if (!res.status) {
+          this.showToast('Không thể tạo cuộc trò chuyện.')
+          return undefined
+        }
+
+        const convData = asRecord(res.data)
+        if (!convData) return undefined
+
+        const chatId = getString(convData, ['id'])
+        if (!chatId) return undefined
+
+        // If already in list, just return the id
+        if (this.chats.some((c) => c.id === chatId)) {
+          return chatId
+        }
+
+        // Try to map from API data
+        let chat = this.mapApiConversation(convData)
+
+        // If mapping failed or name is missing, build from userInfo
+        if (!chat || chat.targetUser.name === 'Người dùng') {
+          const name = userInfo?.name || chat?.targetUser.name || 'Người dùng'
+          const username = userInfo?.username || chat?.targetUser.username || name
+          const avatar = userInfo?.avatar || chat?.targetUser.avatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=200&q=80'
+          chat = {
+            id: chatId,
+            targetUser: {
+              id: userId,
+              name,
+              username,
+              avatar,
+              cover: 'https://images.unsplash.com/photo-1519681393784-d120267933ba?auto=format&fit=crop&w=1200&q=80',
+              bio: 'Thành viên của LongHieu Chanel.',
+              followersCount: 0,
+              followingCount: 0,
+              postsCount: 0,
+            },
+            unreadCount: 0,
+            messages: [],
+            lastMessage: '',
+            lastMessageTime: 'Vừa xong',
+          }
+        } else if (userInfo) {
+          chat = {
+            ...chat,
+            targetUser: {
+              ...chat.targetUser,
+              name: userInfo.name || chat.targetUser.name,
+              username: userInfo.username || chat.targetUser.username,
+              avatar: userInfo.avatar || chat.targetUser.avatar,
+            },
+          }
+        }
+
+        this.saveChats([chat, ...this.chats.filter((c) => c.id !== chatId)])
+        return chatId
+      } catch (error) {
+        console.error('openOrCreateChat error:', error)
+        this.showToast('Không thể mở cuộc trò chuyện.')
+        return undefined
+      }
     },
   },
 })

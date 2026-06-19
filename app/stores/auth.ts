@@ -199,6 +199,20 @@ export const useAuthStore = defineStore('auth', {
       return localStorage.getItem(LS_ACCESS_TOKEN) || ''
     },
 
+    getApiUserId(): string {
+      if (!import.meta.client) return ''
+      const token = this.getAccessToken()
+      if (!token) return ''
+      try {
+        const parts = token.split('.')
+        if (parts.length !== 3) return ''
+        const payload = JSON.parse(atob(parts[1]!)) as Record<string, unknown>
+        return (payload.user_id as string) || ''
+      } catch {
+        return ''
+      }
+    },
+
     // ----- Feedback -----
     showFeedback(text: string, type: Exclude<FeedbackType, ''>) {
       this.feedback = { text, type }

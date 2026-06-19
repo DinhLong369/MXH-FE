@@ -83,6 +83,7 @@ export interface Chat {
   messages: Message[]
   lastMessage: string
   lastMessageTime: string
+  lastSeenAt?: string  // Thời điểm người kia cuối cùng đã đọc conversation này
 }
 
 export interface Group {

@@ -12,6 +12,8 @@ import {
   type RegisterRequest,
   type RegisterResponse,
   type ResetPasswordRequest,
+  type SearchUsersQuery,
+  type SearchUsersResponse,
   type SendRegisterOtpRequest,
   type VerifyForgotPasswordOtpRequest,
   type VerifyRegisterOtpRequest,
@@ -42,6 +44,17 @@ export function useMxhApi() {
 
   return {
     endpoints: MXH_API_ENDPOINTS,
+
+    users: {
+      search(accessToken: string, query: SearchUsersQuery) {
+        const endpoint = MXH_API_ENDPOINTS.users.search
+        return request<SearchUsersResponse>(endpoint.path, {
+          method: endpoint.method,
+          headers: authHeaders(accessToken),
+          query,
+        })
+      },
+    },
 
     auth: {
       sendForgotPasswordOtp(payload: ForgotPasswordOtpRequest) {

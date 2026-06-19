@@ -4,6 +4,12 @@
 // ============================================================
 
 export const MXH_API_ENDPOINTS = {
+  users: {
+    search: {
+      method: 'GET' as const,
+      path: '/api/users/search.json',
+    },
+  },
   auth: {
     forgotPasswordOtp: {
       method: 'POST',
@@ -133,4 +139,20 @@ export interface MessageListResponse<TData = unknown> extends ApiMessageResponse
 export interface ConversationMessagesQuery {
   page?: number
   limit?: number
+}
+
+export interface SearchUsersQuery {
+  q: string
+}
+
+export interface ApiUserResult {
+  id: string
+  name: string
+  username: string
+  avatar: string
+  email?: string
+}
+
+export interface SearchUsersResponse extends ApiMessageResponse {
+  data: ApiUserResult[]
 }
