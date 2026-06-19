@@ -106,7 +106,7 @@ function decodeMediaPayload(text: string): Pick<Message, 'kind' | 'image'> | nul
   try {
     const parsed = JSON.parse(text.slice(markerIndex + MEDIA_PREFIX.length).trim()) as { kind?: Message['kind']; url?: string }
     const kind = parsed.kind
-    if ((kind === 'image' || kind === 'video' || kind === 'audio' || kind === 'gif') && parsed.url) {
+    if ((kind === 'image' || kind === 'video' || kind === 'audio' || kind === 'gif' || kind === 'sticker') && parsed.url) {
       return { kind, image: parsed.url }
     }
   } catch {
@@ -160,6 +160,21 @@ function normalizeChat(chat: Chat): Chat {
   }
 }
 
+function getPendingLocalMessages(existing: Chat | undefined, apiMessages: Message[]) {
+  if (!existing) return []
+  const apiKeys = new Set(apiMessages.map((message) => `${message.sender}:${message.text}:${message.image || ''}`))
+  const now = Date.now()
+
+  return existing.messages
+    .map(normalizeMessagePayload)
+    .filter((message) => {
+      if (message.sender !== 'me' || !message.id.startsWith('msg-')) return false
+      const createdAt = new Date(message.createdAt).getTime()
+      if (!Number.isFinite(createdAt) || now - createdAt > 2 * 60 * 1000) return false
+      return !apiKeys.has(`${message.sender}:${message.text}:${message.image || ''}`)
+    })
+}
+
 function messagePreview(msg: Pick<Message, 'text' | 'kind' | 'image' | 'location' | 'voiceDuration'>) {
   if (msg.text) return msg.text
   if (msg.kind === 'image') return '📷 Hình ảnh'
@@ -174,7 +189,7 @@ function messagePreview(msg: Pick<Message, 'text' | 'kind' | 'image' | 'location
 
 function messageTransportContent(msg: Message) {
   if (msg.kind === 'location') return encodeLocationPayload(msg.location)
-  if ((msg.kind === 'image' || msg.kind === 'video' || msg.kind === 'audio' || msg.kind === 'gif') && msg.image) {
+  if ((msg.kind === 'image' || msg.kind === 'video' || msg.kind === 'audio' || msg.kind === 'gif' || msg.kind === 'sticker') && msg.image) {
     return encodeMediaPayload(msg)
   }
   if (msg.kind === 'voice') return `[Tin nhắn thoại ${msg.voiceDuration || 0}s]`
@@ -1030,19 +1045,26 @@ export const useSocialStore = defineStore('social', {
                 .map((item) => this.mapApiMessage(item, chat.id))
                 .filter((message): message is Message => Boolean(message))
                 .reverse() // API trả về DESC (mới→cũ), reverse để hiển thị đúng cũ→mới
+              const pendingMessages = getPendingLocalMessages(existing, apiMessages)
               if (!apiMessages.length) {
+                const lastPending = pendingMessages[pendingMessages.length - 1]
                 return {
                   ...merged,
-                  messages: [],
-                  lastMessage: rawMessages.length ? merged.lastMessage : '',
-                  lastMessageTime: rawMessages.length ? merged.lastMessageTime : '',
+                  messages: pendingMessages,
+                  lastMessage: lastPending
+                    ? messagePreview(lastPending)
+                    : rawMessages.length ? merged.lastMessage : '',
+                  lastMessageTime: lastPending
+                    ? 'Vừa xong'
+                    : rawMessages.length ? merged.lastMessageTime : '',
                 }
               }
-              const last = apiMessages[apiMessages.length - 1]
+              const mergedMessages = [...apiMessages, ...pendingMessages]
+              const last = mergedMessages[mergedMessages.length - 1]
               return {
                 ...merged,
-                messages: apiMessages,
-                lastMessage: last?.text || merged.lastMessage,
+                messages: mergedMessages,
+                lastMessage: last ? messagePreview(last) : merged.lastMessage,
                 lastMessageTime: last ? 'Vừa xong' : merged.lastMessageTime,
               }
             } catch (error) {

@@ -20,6 +20,7 @@ export default {
   runtimeConfig: {
     // Server-only (never exposed to client)
     geminiApiKey: process.env.NUXT_GEMINI_API_KEY || '',
+    giphyApiKey: process.env.NUXT_GIPHY_API_KEY || '',
     apiSecret: process.env.NUXT_API_SECRET || '',
     public: {
       // Exposed to the client

@@ -7,6 +7,12 @@ import {
 import type { Chat, Message } from '~/types'
 import type { ApiUserResult } from '~/types/api'
 
+type MediaLibraryItem = {
+  id: string
+  title: string
+  url: string
+}
+
 const store = useSocialStore()
 const { chats, currentUser } = storeToRefs(store)
 
@@ -36,6 +42,10 @@ const quickEmojis = ['👍', '❤️', '😆', '😮', '😢', '🙏']
 const showAttachMenu = ref(false)
 const showStickerPanel = ref(false)
 const stickerTab = ref<'sticker' | 'gif'>('sticker')
+const mediaLibraryQuery = ref('')
+const mediaLibraryLoading = ref(false)
+const mediaLibraryItems = ref<MediaLibraryItem[]>([])
+let mediaLibraryDebounce: ReturnType<typeof setTimeout> | null = null
 
 // Ghi âm (giả lập)
 const isRecording = ref(false)
@@ -57,16 +67,6 @@ const searchLoading = ref(false)
 let searchDebounce: ReturnType<typeof setTimeout> | null = null
 const groupName = ref('')
 const groupMembers = ref<ApiUserResult[]>([])
-
-const STICKERS = ['😀', '😍', '🥳', '😎', '🤩', '😂', '😭', '👍', '❤️', '🔥', '🎉', '🙏', '💯', '👏', '🤔', '🥰', '😡', '🤯']
-const GIFS = [
-  'https://media.giphy.com/media/ICOgUNjpvO0PC/giphy.gif',
-  'https://media.giphy.com/media/l0MYt5jPR6QX5pnqM/giphy.gif',
-  'https://media.giphy.com/media/3o7aCSPqXE5C6T8tBC/giphy.gif',
-  'https://media.giphy.com/media/26ufdip5N0n8sBx44/giphy.gif',
-  'https://media.giphy.com/media/xT0xeJpnrWC4XWblEk/giphy.gif',
-  'https://media.giphy.com/media/111ebonMs90YLu/giphy.gif',
-]
 
 const activeChat = computed(() => visibleChats.value.find((c) => c.id === activeChatId.value) || null)
 
@@ -484,17 +484,49 @@ function onPaste(e: ClipboardEvent) {
 }
 
 // ---------- Sticker / GIF ----------
+async function loadMediaLibrary() {
+  mediaLibraryLoading.value = true
+  try {
+    const res = await $fetch<{ items: MediaLibraryItem[] }>('/api/media-library', {
+      query: {
+        kind: stickerTab.value,
+        q: mediaLibraryQuery.value.trim() || undefined,
+      },
+    })
+    mediaLibraryItems.value = res.items || []
+  } catch {
+    mediaLibraryItems.value = []
+    store.showToast('Không tải được thư viện GIF/sticker.')
+  } finally {
+    mediaLibraryLoading.value = false
+  }
+}
+
+function onMediaLibrarySearch() {
+  if (mediaLibraryDebounce) clearTimeout(mediaLibraryDebounce)
+  mediaLibraryDebounce = setTimeout(() => {
+    loadMediaLibrary()
+  }, 350)
+}
+
+function setStickerTab(tab: 'sticker' | 'gif') {
+  stickerTab.value = tab
+  mediaLibraryQuery.value = ''
+  mediaLibraryItems.value = []
+  loadMediaLibrary()
+}
+
 function toggleStickerPanel(tab: 'sticker' | 'gif') {
   showAttachMenu.value = false
   if (showStickerPanel.value && stickerTab.value === tab) {
     showStickerPanel.value = false
   } else {
-    stickerTab.value = tab
+    setStickerTab(tab)
     showStickerPanel.value = true
   }
 }
-function sendSticker(emoji: string) {
-  pushAttachment(emoji, { kind: 'sticker' })
+function sendSticker(url: string) {
+  pushAttachment('', { kind: 'sticker', image: url })
 }
 function sendGif(url: string) {
   pushAttachment('', { kind: 'gif', image: url })
@@ -566,6 +598,24 @@ function timeLabel(iso: string): string {
   }
 }
 
+function messageTextParts(text: string) {
+  const parts: Array<{ text: string; href?: string }> = []
+  const urlPattern = /((https?:\/\/|www\.)[^\s<]+)/gi
+  let cursor = 0
+  for (const match of text.matchAll(urlPattern)) {
+    const value = match[0]
+    const index = match.index ?? 0
+    if (index > cursor) parts.push({ text: text.slice(cursor, index) })
+    const clean = value.replace(/[),.;!?]+$/g, '')
+    const suffix = value.slice(clean.length)
+    parts.push({ text: clean, href: clean.startsWith('http') ? clean : `https://${clean}` })
+    if (suffix) parts.push({ text: suffix })
+    cursor = index + value.length
+  }
+  if (cursor < text.length) parts.push({ text: text.slice(cursor) })
+  return parts
+}
+
 watch(activeChatId, async (id) => {
   showJumpToLatest.value = false
   hasNewInActiveChat.value = false
@@ -620,6 +670,7 @@ onUnmounted(() => {
   store.setActiveChatInMessenger(null)
   if (recordTimer) clearInterval(recordTimer)
   if (searchDebounce) clearTimeout(searchDebounce)
+  if (mediaLibraryDebounce) clearTimeout(mediaLibraryDebounce)
 })
 </script>
 
@@ -905,6 +956,20 @@ onUnmounted(() => {
                   </div>
 
                   <!-- Sticker -->
+                  <div v-else-if="msg.kind === 'sticker' && msg.image" class="relative overflow-hidden rounded-2xl bg-slate-900/80 p-1">
+                    <div v-if="!isMediaLoaded(msg.id)" class="flex h-28 w-28 items-center justify-center rounded-xl bg-slate-950/70 text-[10px] font-bold text-slate-500">
+                      <span class="h-3 w-3 rounded-full border-2 border-slate-500/40 border-t-indigo-400 animate-spin" />
+                    </div>
+                    <img
+                      :src="msg.image"
+                      alt="Nhãn dán"
+                      class="h-28 w-28 object-contain transition-opacity duration-150"
+                      :class="isMediaLoaded(msg.id) ? 'opacity-100' : 'absolute inset-1 opacity-0'"
+                      referrerpolicy="no-referrer"
+                      @load="markMediaLoaded(msg.id)"
+                      @error="markMediaLoaded(msg.id)"
+                    >
+                  </div>
                   <div v-else-if="msg.kind === 'sticker'" class="text-5xl leading-none py-1">
                     {{ msg.text }}
                   </div>
@@ -1000,7 +1065,20 @@ onUnmounted(() => {
                     class="rounded-2xl px-3.5 py-2 text-xs leading-relaxed"
                     :class="msg.sender === 'me' ? 'bg-indigo-600 text-white rounded-br-sm' : 'bg-slate-800 text-slate-200 rounded-bl-sm'"
                   >
-                    <p class="whitespace-pre-wrap break-words">{{ msg.text }}</p>
+                    <p class="whitespace-pre-wrap break-words">
+                      <template v-for="(part, index) in messageTextParts(msg.text)" :key="`${msg.id}-${index}`">
+                        <a
+                          v-if="part.href"
+                          :href="part.href"
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          class="font-extrabold underline decoration-white/40 underline-offset-2 transition hover:decoration-current"
+                          :class="msg.sender === 'me' ? 'text-white' : 'text-indigo-300'"
+                          @click.stop
+                        >{{ part.text }}</a>
+                        <template v-else>{{ part.text }}</template>
+                      </template>
+                    </p>
                     <p class="mt-1 text-[9px] opacity-60 text-right">
                       <span v-if="msg.edited">đã sửa · </span>{{ timeLabel(msg.createdAt) }}
                     </p>
@@ -1079,16 +1157,35 @@ onUnmounted(() => {
 
           <!-- Bảng sticker / gif -->
           <div v-if="showStickerPanel" class="shrink-0 border-t border-slate-800 bg-slate-900/60 px-3 pt-2 pb-1" data-messenger-popover>
-            <div class="flex items-center gap-2 mb-2">
-              <button class="rounded-full px-3 py-1 text-[11px] font-bold transition" :class="stickerTab === 'sticker' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-slate-200'" @click="stickerTab = 'sticker'">Nhãn dán</button>
-              <button class="rounded-full px-3 py-1 text-[11px] font-bold transition" :class="stickerTab === 'gif' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-slate-200'" @click="stickerTab = 'gif'">GIF</button>
+            <div class="mb-2 flex items-center gap-2">
+              <button class="rounded-full px-3 py-1 text-[11px] font-bold transition" :class="stickerTab === 'sticker' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-slate-200'" @click="setStickerTab('sticker')">Nhãn dán</button>
+              <button class="rounded-full px-3 py-1 text-[11px] font-bold transition" :class="stickerTab === 'gif' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-slate-200'" @click="setStickerTab('gif')">GIF</button>
+              <div class="ml-auto flex min-w-0 flex-1 items-center gap-2 rounded-xl border border-slate-800 bg-slate-950 px-2.5 py-1.5">
+                <Search class="h-3.5 w-3.5 shrink-0 text-slate-500" />
+                <input
+                  v-model="mediaLibraryQuery"
+                  type="text"
+                  :placeholder="stickerTab === 'gif' ? 'Tìm GIF...' : 'Tìm nhãn dán...'"
+                  class="min-w-0 flex-1 bg-transparent text-[11px] font-semibold text-slate-200 placeholder-slate-500 focus:outline-none"
+                  @input="onMediaLibrarySearch"
+                >
+              </div>
             </div>
-            <div v-if="stickerTab === 'sticker'" class="grid grid-cols-9 gap-1 max-h-28 overflow-y-auto thin-scrollbar pb-1">
-              <button v-for="s in STICKERS" :key="s" class="text-2xl rounded-xl py-1 hover:bg-slate-800 transition" @click="sendSticker(s)">{{ s }}</button>
+            <div v-if="mediaLibraryLoading" class="flex h-28 items-center justify-center gap-2 text-xs font-bold text-slate-500">
+              <span class="h-4 w-4 rounded-full border-2 border-slate-500/30 border-t-indigo-400 animate-spin" />
+              Đang tải thư viện...
             </div>
-            <div v-else class="grid grid-cols-3 gap-1.5 max-h-40 overflow-y-auto thin-scrollbar pb-1">
-              <button v-for="g in GIFS" :key="g" class="overflow-hidden rounded-xl border border-slate-800 hover:border-indigo-500/50 transition" @click="sendGif(g)">
-                <img :src="g" alt="GIF" class="h-20 w-full object-cover" referrerpolicy="no-referrer">
+            <div v-else-if="!mediaLibraryItems.length" class="flex h-28 items-center justify-center text-center text-xs font-bold text-slate-500">
+              Không có kết quả
+            </div>
+            <div v-else class="grid max-h-44 grid-cols-4 gap-1.5 overflow-y-auto thin-scrollbar pb-1">
+              <button
+                v-for="item in mediaLibraryItems"
+                :key="item.id"
+                class="overflow-hidden rounded-xl border border-slate-800 bg-slate-950/70 transition hover:border-indigo-500/50 hover:bg-slate-800"
+                @click="stickerTab === 'gif' ? sendGif(item.url) : sendSticker(item.url)"
+              >
+                <img :src="item.url" :alt="item.title || stickerTab" class="h-20 w-full object-contain" referrerpolicy="no-referrer">
               </button>
             </div>
           </div>
