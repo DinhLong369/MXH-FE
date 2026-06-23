@@ -21,6 +21,15 @@ function isUuidFormat(id: string): boolean {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)
 }
 
+function moveToTop(chats: Chat[], chatId: string): Chat[] {
+  const idx = chats.findIndex(c => c.id === chatId)
+  if (idx <= 0) return chats
+  const result = [...chats]
+  const [chat] = result.splice(idx, 1)
+  result.unshift(chat!)
+  return result
+}
+
 // Khóa localStorage
 const LS = {
   user: 'vs_currentUser',
@@ -1115,10 +1124,13 @@ export const useSocialStore = defineStore('social', {
       // Nhãn hiển thị trong danh sách chat theo loại tin
       const preview = messagePreview(msg)
       this.saveChats(
-        this.chats.map((c) =>
-          c.id === chatId
-            ? { ...c, messages: [...c.messages, msg], lastMessage: preview, lastMessageTime: 'Vừa xong' }
-            : c,
+        moveToTop(
+          this.chats.map((c) =>
+            c.id === chatId
+              ? { ...c, messages: [...c.messages, msg], lastMessage: preview, lastMessageTime: 'Vừa xong' }
+              : c,
+          ),
+          chatId,
         ),
       )
 
@@ -1497,18 +1509,21 @@ export const useSocialStore = defineStore('social', {
           !(import.meta.client && document.hidden)
 
         this.saveChats(
-          this.chats.map((c) => {
-            if (c.id !== conversationId) return c
-            return {
-              ...c,
-              messages: [...c.messages, msg],
-              lastMessage: messagePreview(msg),
-              lastMessageTime: 'Vừa xong',
-              // Không tăng unread nếu đang xem conversation này
-              unreadCount: isActiveConversation ? 0 : c.unreadCount + 1,
-              hidden: false,
-            }
-          }),
+          moveToTop(
+            this.chats.map((c) => {
+              if (c.id !== conversationId) return c
+              return {
+                ...c,
+                messages: [...c.messages, msg],
+                lastMessage: messagePreview(msg),
+                lastMessageTime: 'Vừa xong',
+                // Không tăng unread nếu đang xem conversation này
+                unreadCount: isActiveConversation ? 0 : c.unreadCount + 1,
+                hidden: false,
+              }
+            }),
+            conversationId,
+          ),
         )
 
         // Nếu đang xem conversation → auto gửi seen

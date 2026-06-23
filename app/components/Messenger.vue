@@ -927,8 +927,8 @@ onUnmounted(() => {
                   class="h-7 w-7 shrink-0 rounded-full object-cover"
                   referrerpolicy="no-referrer"
                 >
-                <!-- Hành động (trái) cho tin của mình -->
-                <div v-if="msg.sender === 'me' && editingId !== msg.id" class="flex items-center gap-0.5 opacity-0 group-hover/msg:opacity-100 transition self-center">
+                <!-- Hành động (trái) cho tin của mình — ẩn trên mobile để tránh overflow -->
+                <div v-if="msg.sender === 'me' && editingId !== msg.id" class="hidden md:flex items-center gap-0.5 opacity-0 group-hover/msg:opacity-100 transition self-center">
                   <div class="relative" data-messenger-popover>
                     <button class="flex h-7 w-7 items-center justify-center rounded-full text-slate-500 hover:bg-slate-700 hover:text-slate-200" title="Biểu cảm" @click="reactMenuId = reactMenuId === msg.id ? null : msg.id">
                       <SmilePlus class="h-3.5 w-3.5" />
@@ -972,8 +972,9 @@ onUnmounted(() => {
                       @error="markMediaLoaded(msg.id)"
                     >
                   </div>
-                  <div v-else-if="msg.kind === 'sticker'" class="text-5xl leading-none py-1">
-                    {{ msg.text }}
+                  <div v-else-if="msg.kind === 'sticker'" class="flex flex-col items-end gap-0.5">
+                    <div class="text-5xl leading-none py-1">{{ msg.text }}</div>
+                    <p class="text-[9px] text-slate-500 opacity-70">{{ timeLabel(msg.createdAt) }}</p>
                   </div>
 
                   <!-- Ảnh / GIF -->
@@ -1030,14 +1031,17 @@ onUnmounted(() => {
                   <!-- Tin nhắn thoại -->
                   <div
                     v-else-if="msg.kind === 'voice'"
-                    class="flex items-center gap-2.5 rounded-2xl px-3.5 py-2.5"
+                    class="rounded-2xl px-3.5 py-2.5"
                     :class="msg.sender === 'me' ? 'bg-indigo-600 text-white' : 'bg-slate-800 text-slate-200'"
                   >
-                    <Mic class="h-4 w-4 shrink-0 opacity-80" />
-                    <span class="flex items-end gap-0.5 h-4">
-                      <span v-for="i in 18" :key="i" class="w-0.5 rounded-full bg-current opacity-60" :style="{ height: `${4 + ((i * 7) % 12)}px` }" />
-                    </span>
-                    <span class="text-[10px] font-mono opacity-90">{{ fmtDur(msg.voiceDuration || 0) }}</span>
+                    <div class="flex items-center gap-2.5">
+                      <Mic class="h-4 w-4 shrink-0 opacity-80" />
+                      <span class="flex items-end gap-0.5 h-4">
+                        <span v-for="i in 18" :key="i" class="w-0.5 rounded-full bg-current opacity-60" :style="{ height: `${4 + ((i * 7) % 12)}px` }" />
+                      </span>
+                      <span class="text-[10px] font-mono opacity-90">{{ fmtDur(msg.voiceDuration || 0) }}</span>
+                    </div>
+                    <p class="mt-1 text-[9px] opacity-60 text-right">{{ timeLabel(msg.createdAt) }}</p>
                   </div>
 
                   <!-- Vị trí -->
@@ -1057,7 +1061,10 @@ onUnmounted(() => {
                       <p v-if="msg.location?.lat != null" class="text-[9px] text-slate-400">
                         {{ msg.location.lat.toFixed(4) }}, {{ msg.location.lng?.toFixed(4) }}
                       </p>
-                      <p class="text-[9px] text-indigo-400 mt-0.5">Mở trong Google Maps →</p>
+                      <div class="flex items-center justify-between mt-0.5">
+                        <p class="text-[9px] text-indigo-400">Mở trong Google Maps →</p>
+                        <p class="text-[9px] text-slate-500">{{ timeLabel(msg.createdAt) }}</p>
+                      </div>
                     </div>
                   </a>
 
@@ -1092,8 +1099,8 @@ onUnmounted(() => {
                   </span>
                 </div>
 
-                <!-- Hành động (phải) cho tin của người khác -->
-                <div v-if="msg.sender === 'them'" class="flex items-center gap-0.5 opacity-0 group-hover/msg:opacity-100 transition self-center">
+                <!-- Hành động (phải) cho tin của người khác — ẩn trên mobile -->
+                <div v-if="msg.sender === 'them'" class="hidden md:flex items-center gap-0.5 opacity-0 group-hover/msg:opacity-100 transition self-center">
                   <div class="relative" data-messenger-popover>
                     <button class="flex h-7 w-7 items-center justify-center rounded-full text-slate-500 hover:bg-slate-700 hover:text-slate-200" title="Biểu cảm" @click="reactMenuId = reactMenuId === msg.id ? null : msg.id">
                       <SmilePlus class="h-3.5 w-3.5" />
