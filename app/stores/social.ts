@@ -14,6 +14,8 @@ import { AI_BOTS, GROUPS, INITIAL_POSTS, ME_USER } from '~/data'
 
 // WebSocket connection (module-level, not reactive)
 let wsConn: WebSocket | null = null
+let wsReconnectTimer: ReturnType<typeof setTimeout> | null = null
+let wsIntentionalClose = false
 
 function isUuidFormat(id: string): boolean {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)
@@ -1374,6 +1376,7 @@ export const useSocialStore = defineStore('social', {
       const base = (config.public.apiBaseUrl as string).replace(/\/$/, '').replace(/\/api$/, '')
       const wsBase = base.replace(/^https/, 'wss').replace(/^http/, 'ws')
 
+      wsIntentionalClose = false
       wsConn = new WebSocket(`${wsBase}/ws/chat?token=${encodeURIComponent(token)}`)
 
       wsConn.onmessage = (event: MessageEvent) => {
@@ -1391,10 +1394,19 @@ export const useSocialStore = defineStore('social', {
 
       wsConn.onclose = () => {
         wsConn = null
+        if (wsIntentionalClose) return
+        // Tự reconnect sau 3 giây khi bị đứt ngoài ý muốn
+        if (wsReconnectTimer) clearTimeout(wsReconnectTimer)
+        wsReconnectTimer = setTimeout(() => {
+          wsReconnectTimer = null
+          this.connectWebSocket()
+        }, 3000)
       }
     },
 
     disconnectWebSocket() {
+      wsIntentionalClose = true
+      if (wsReconnectTimer) { clearTimeout(wsReconnectTimer); wsReconnectTimer = null }
       if (wsConn) {
         wsConn.close()
         wsConn = null
@@ -1588,6 +1600,7 @@ export const useSocialStore = defineStore('social', {
         const data = asRecord(event.data)
         const callerId = getString(data, ['caller_id'])
         const chat = this.chats.find((c) => c.targetUser.id === callerId)
+        console.debug('[WS] call_offer received from', callerId)
         this.incomingCall = {
           callerId,
           callerName: chat?.targetUser.name ?? 'Người dùng',
@@ -1597,8 +1610,9 @@ export const useSocialStore = defineStore('social', {
         return
       }
 
-      // ── Gọi video: relay answer / ICE / end / reject đến VideoCall component ──
-      if (type === 'call_answer' || type === 'call_ice' || type === 'call_end' || type === 'call_reject') {
+      // ── Gọi video: relay answer / ICE / end / reject / unavailable đến VideoCall component ──
+      if (type === 'call_answer' || type === 'call_ice' || type === 'call_end' || type === 'call_reject' || type === 'call_unavailable') {
+        console.debug('[WS] call signal received:', type)
         const data = asRecord(event.data)
         if (type === 'call_end' || type === 'call_reject') {
           this.callEventQueue = []
@@ -1606,6 +1620,7 @@ export const useSocialStore = defineStore('social', {
           this.incomingCall = null
         } else {
           // Push vào queue — KHÔNG ghi đè, tránh mất ICE candidates khi nhiều event đến nhanh
+          // call_unavailable và call_answer không cần signal payload
           this.callEventQueue = [...this.callEventQueue, { type, data: data?.signal ?? null }]
         }
         return

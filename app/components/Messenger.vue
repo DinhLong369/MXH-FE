@@ -888,7 +888,7 @@ onUnmounted(() => {
               </p>
             </div>
             <!-- Gọi video -->
-            <button class="flex h-9 w-9 items-center justify-center rounded-full text-indigo-400 hover:bg-indigo-950/40 transition disabled:opacity-40 disabled:cursor-not-allowed" title="Gọi video" :disabled="inCall" @click="startCall">
+            <button class="flex h-9 w-9 items-center justify-center rounded-full text-indigo-400 hover:bg-indigo-950/40 transition disabled:opacity-40 disabled:cursor-not-allowed" :title="inCall ? 'Đang trong cuộc gọi' : !store.isUserOnline(activeChat.targetUser.id) ? 'Người dùng không trực tuyến' : 'Gọi video'" :disabled="inCall || !store.isUserOnline(activeChat.targetUser.id)" @click="startCall">
               <Video class="h-5 w-5" />
             </button>
             <!-- Menu cuộc hội thoại -->

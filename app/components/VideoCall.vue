@@ -20,6 +20,11 @@ const iceCandidateBuffer = ref<RTCIceCandidateInit[]>([])
 let remoteDescSet = false
 
 let durationTimer: ReturnType<typeof setInterval> | null = null
+let ringTimeoutId: ReturnType<typeof setTimeout> | null = null
+
+function clearRingTimeout() {
+  if (ringTimeoutId) { clearTimeout(ringTimeoutId); ringTimeoutId = null }
+}
 
 const ICE_SERVERS: RTCConfiguration = {
   iceServers: [{ urls: 'stun:stun.l.google.com:19302' }],
@@ -31,47 +36,9 @@ const durationLabel = computed(() => {
   return `${m}:${s}`
 })
 
-// enumerateDevices() không cần permission và trả về gần như ngay lập tức
-// → biết trước hardware có gì, tránh gọi getUserMedia với constraint sẽ fail
-async function getLocalStream(): Promise<MediaStream | null> {
-  try {
-    const devices = await navigator.mediaDevices.enumerateDevices()
-    const hasVideo = devices.some((d) => d.kind === 'videoinput')
-    const hasAudio = devices.some((d) => d.kind === 'audioinput')
-
-    if (!hasAudio && !hasVideo) {
-      isCamOff.value = true
-      isMuted.value = true
-      mediaError.value = 'Không có thiết bị media'
-      return null
-    }
-
-    const stream = await navigator.mediaDevices.getUserMedia({ video: hasVideo, audio: hasAudio })
-    localStream.value = stream
-    if (!hasVideo) {
-      isCamOff.value = true
-      mediaError.value = 'Không có camera, dùng audio'
-    }
-    await nextTick()
-    if (localVideoEl.value) localVideoEl.value.srcObject = stream
-    return stream
-  } catch {
-    isCamOff.value = true
-    isMuted.value = true
-    mediaError.value = 'Không truy cập được camera/micro'
-    return null
-  }
-}
-
-function buildPeerConnection(stream: MediaStream | null): RTCPeerConnection {
+// Tạo PeerConnection với event handlers — không cần media để bắt đầu
+function createPeerConnection(): RTCPeerConnection {
   const conn = new RTCPeerConnection(ICE_SERVERS)
-
-  // Data channel đảm bảo ICE connectivity check xảy ra ngay cả khi không có media track
-  conn.createDataChannel('ping')
-
-  if (stream) {
-    stream.getTracks().forEach((track) => conn.addTrack(track, stream))
-  }
 
   conn.ontrack = (event) => {
     if (remoteVideoEl.value && event.streams[0]) {
@@ -103,32 +70,67 @@ function buildPeerConnection(stream: MediaStream | null): RTCPeerConnection {
   return conn
 }
 
-async function initiateCall() {
-  if (!activeCall.value) return
-  statusLabel.value = 'Đang lấy media...'
-  const stream = await getLocalStream()
-
-  statusLabel.value = 'Đang gửi tín hiệu...'
-  const conn = buildPeerConnection(stream)
-
-  const offer = await conn.createOffer({ offerToReceiveAudio: true, offerToReceiveVideo: true })
-  await conn.setLocalDescription(offer)
-  store.sendWsSignal('call_offer', activeCall.value.targetUserId, conn.localDescription?.toJSON())
-  statusLabel.value = 'Đang chờ đối phương...'
+// Gắn media vào senders sau khi offer/answer đã gửi — chạy ngầm, không block signaling
+async function attachMedia(audioSender: RTCRtpSender | null, videoSender: RTCRtpSender | null) {
+  let stream: MediaStream | null = null
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true })
+  } catch {
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({ video: false, audio: true })
+      isCamOff.value = true
+    } catch {
+      isCamOff.value = true
+      isMuted.value = true
+      mediaError.value = 'Không truy cập được camera/micro'
+      return
+    }
+  }
+  if (!stream || !pc.value) return
+  localStream.value = stream
+  await nextTick()
+  if (localVideoEl.value) localVideoEl.value.srcObject = stream
+  for (const track of stream.getTracks()) {
+    try {
+      if (track.kind === 'audio' && audioSender) await audioSender.replaceTrack(track)
+      if (track.kind === 'video' && videoSender) await videoSender.replaceTrack(track)
+    } catch { /* sender có thể đã đóng */ }
+  }
 }
 
+// Caller: gửi offer NGAY (không chờ camera) — media gắn vào sau qua replaceTrack
+async function initiateCall() {
+  if (!activeCall.value) return
+
+  const conn = createPeerConnection()
+  const audioTr = conn.addTransceiver('audio', { direction: 'sendrecv' })
+  const videoTr = conn.addTransceiver('video', { direction: 'sendrecv' })
+
+  const offer = await conn.createOffer()
+  await conn.setLocalDescription(offer)
+  store.sendWsSignal('call_offer', activeCall.value.targetUserId, conn.localDescription!.toJSON())
+  console.debug('[VideoCall] call_offer sent to', activeCall.value.targetUserId)
+  statusLabel.value = 'Đang chờ đối phương...'
+
+  // Tự động huỷ nếu không có phản hồi sau 30 giây
+  ringTimeoutId = setTimeout(() => {
+    statusLabel.value = 'Không có phản hồi'
+    setTimeout(() => hangUp(true), 1500)
+  }, 30_000)
+
+  attachMedia(audioTr.sender, videoTr.sender)
+}
+
+// Callee: gửi answer NGAY — media gắn vào sau qua replaceTrack
 async function answerCall() {
   if (!activeCall.value?.initialSignal) return
-  statusLabel.value = 'Đang lấy media...'
-  const stream = await getLocalStream()
 
-  statusLabel.value = 'Đang kết nối...'
-  const conn = buildPeerConnection(stream)
-
-  await conn.setRemoteDescription(new RTCSessionDescription(activeCall.value.initialSignal as RTCSessionDescriptionInit))
+  const conn = createPeerConnection()
+  await conn.setRemoteDescription(
+    new RTCSessionDescription(activeCall.value.initialSignal as RTCSessionDescriptionInit),
+  )
   remoteDescSet = true
 
-  // Flush buffered ICE candidates
   for (const c of iceCandidateBuffer.value) {
     try { await conn.addIceCandidate(new RTCIceCandidate(c)) } catch { /* non-fatal */ }
   }
@@ -136,7 +138,13 @@ async function answerCall() {
 
   const answer = await conn.createAnswer()
   await conn.setLocalDescription(answer)
-  store.sendWsSignal('call_answer', activeCall.value.targetUserId, conn.localDescription?.toJSON())
+  store.sendWsSignal('call_answer', activeCall.value.targetUserId, conn.localDescription!.toJSON())
+
+  // Lấy senders từ transceivers được tạo bởi setRemoteDescription
+  const trs = conn.getTransceivers()
+  const audioSender = trs.find((t) => t.receiver.track?.kind === 'audio')?.sender ?? null
+  const videoSender = trs.find((t) => t.receiver.track?.kind === 'video')?.sender ?? null
+  attachMedia(audioSender, videoSender)
 }
 
 // Watch queue length — drain all events in order, none get overwritten
@@ -153,6 +161,7 @@ watch(
 
 async function processCallEvent(event: { type: string; data: unknown }) {
   if (event.type === 'call_answer' && pc.value) {
+    clearRingTimeout()
     try {
       await pc.value.setRemoteDescription(new RTCSessionDescription(event.data as RTCSessionDescriptionInit))
       remoteDescSet = true
@@ -170,6 +179,11 @@ async function processCallEvent(event: { type: string; data: unknown }) {
     }
   } else if (event.type === 'call_end' || event.type === 'call_reject') {
     hangUp(false)
+  } else if (event.type === 'call_unavailable') {
+    clearRingTimeout()
+    console.debug('[VideoCall] receiver is offline')
+    statusLabel.value = 'Người dùng không trực tuyến'
+    setTimeout(() => hangUp(false), 2000)
   }
 }
 
@@ -223,6 +237,7 @@ onMounted(async () => {
 })
 
 onUnmounted(() => {
+  clearRingTimeout()
   pc.value?.close()
   localStream.value?.getTracks().forEach((t) => t.stop())
   stopTimer()
