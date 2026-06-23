@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Home, Compass, MessageCircle, Bell, User, PenSquare, Sparkles, LogOut } from 'lucide-vue-next'
+import { Home, Compass, MessageCircle, Bell, User, PenSquare, Sparkles, LogOut, Settings } from 'lucide-vue-next'
 
 const store = useSocialStore()
 const auth = useAuthStore()
@@ -11,11 +11,12 @@ function logout() {
 }
 
 const items = [
-  { key: 'home', label: 'Trang chủ', icon: Home },
-  { key: 'explore', label: 'Khám phá', icon: Compass },
-  { key: 'messenger', label: 'Tin nhắn', icon: MessageCircle },
-  { key: 'notifications', label: 'Thông báo', icon: Bell },
-  { key: 'profile', label: 'Trang cá nhân', icon: User },
+  { key: 'home',          label: 'Trang chủ',    icon: Home },
+  { key: 'explore',       label: 'Khám phá',     icon: Compass },
+  { key: 'messenger',     label: 'Tin nhắn',     icon: MessageCircle },
+  { key: 'notifications', label: 'Thông báo',    icon: Bell },
+  { key: 'profile',       label: 'Trang cá nhân',icon: User },
+  { key: 'settings',      label: 'Cài đặt',      icon: Settings },
 ] as const
 
 function badge(key: string): number {
@@ -101,21 +102,26 @@ function badge(key: string): number {
     </div>
   </aside>
 
-  <!-- Mobile bottom nav -->
-  <nav class="md:hidden fixed bottom-0 left-0 right-0 z-40 flex items-center justify-around border-t border-slate-800 bg-slate-950/95 backdrop-blur px-2 py-2 safe-area-inset-bottom">
+  <!-- Mobile bottom nav — icon-only, 6 items -->
+  <nav class="md:hidden fixed bottom-0 left-0 right-0 z-40 flex items-center border-t border-slate-800 bg-slate-950/95 backdrop-blur safe-area-inset-bottom">
     <button
       v-for="item in items"
       :key="item.key"
-      class="relative flex flex-col items-center gap-0.5 px-3 py-1.5 rounded-xl transition"
-      :class="currentTab === item.key ? 'text-indigo-400' : 'text-slate-500'"
+      class="relative flex flex-1 flex-col items-center justify-center py-2.5 transition"
+      :class="currentTab === item.key ? 'text-indigo-400' : 'text-slate-500 hover:text-slate-300'"
       :aria-label="item.label"
       @click="store.setTab(item.key)"
     >
-      <component :is="item.icon" class="h-5 w-5" />
-      <span class="text-[9px] font-medium">{{ item.label }}</span>
+      <!-- Active indicator line -->
+      <span
+        v-if="currentTab === item.key"
+        class="absolute top-0 left-1/2 -translate-x-1/2 h-0.5 w-5 rounded-full bg-indigo-500"
+      />
+      <component :is="item.icon" class="h-[18px] w-[18px]" />
+      <span class="mt-0.5 text-[8px] font-semibold leading-tight">{{ item.label.split(' ')[0] }}</span>
       <span
         v-if="badge(item.key) > 0"
-        class="absolute top-0.5 right-1.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-rose-500 px-1 text-[9px] font-bold text-white"
+        class="absolute top-1 right-[calc(50%-18px)] flex h-3.5 min-w-3.5 items-center justify-center rounded-full bg-rose-500 px-0.5 text-[8px] font-bold text-white"
       >{{ badge(item.key) }}</span>
     </button>
   </nav>

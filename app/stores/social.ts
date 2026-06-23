@@ -32,7 +32,7 @@ const LS = {
   tab: 'vs_currentTab',
 }
 
-const VALID_TABS = ['home', 'explore', 'messenger', 'notifications', 'profile']
+const VALID_TABS = ['home', 'explore', 'messenger', 'notifications', 'profile', 'settings']
 
 function readLS<T>(key: string): T | null {
   if (!import.meta.client) return null

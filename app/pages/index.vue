@@ -65,6 +65,7 @@ const showRightBar = computed(() =>
                 <Messenger v-else-if="currentTab === 'messenger'" />
                 <Notifications v-else-if="currentTab === 'notifications'" />
                 <Profile v-else-if="currentTab === 'profile'" />
+                <Settings v-else-if="currentTab === 'settings'" />
               </Motion>
             </AnimatePresence>
           </main>
@@ -78,7 +79,7 @@ const showRightBar = computed(() =>
         <CreatePostModal v-if="isCreateModalOpen" />
       </AnimatePresence>
 
-      <ThemeSwitcher />
+      <ThemeSwitcher /><!-- applies saved theme on mount, no visible UI -->
 
       <!-- Video call overlay (WebRTC) -->
       <VideoCall v-if="store.activeCall" />
