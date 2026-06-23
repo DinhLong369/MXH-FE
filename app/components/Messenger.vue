@@ -914,7 +914,7 @@ onUnmounted(() => {
           <!-- Messages -->
           <div
             ref="scrollEl"
-            class="flex-1 overflow-y-auto thin-scrollbar min-h-0 p-4 space-y-3"
+            class="flex-1 overflow-y-auto overflow-x-hidden thin-scrollbar min-h-0 p-3 md:p-4 space-y-3"
             @click="closePanels"
             @scroll="onMessagesScroll"
           >
@@ -949,7 +949,7 @@ onUnmounted(() => {
                 </div>
 
                 <!-- Bubble / nội dung -->
-                <div class="relative max-w-[78%]">
+                <div class="relative max-w-[68%] md:max-w-[78%]">
                   <!-- Form sửa -->
                   <div v-if="editingId === msg.id" class="flex items-center gap-1.5 rounded-2xl bg-slate-950 border border-indigo-500/40 px-2.5 py-1.5">
                     <input v-model="editText" type="text" class="w-48 bg-transparent text-xs text-slate-100 focus:outline-none" @keyup.enter="saveEdit" @keyup.esc="cancelEdit">
@@ -979,14 +979,14 @@ onUnmounted(() => {
 
                   <!-- Ảnh / GIF -->
                   <div v-else-if="(msg.kind === 'image' || msg.kind === 'gif') && msg.image" class="relative overflow-hidden rounded-2xl border border-slate-700/50 bg-slate-900">
-                    <div v-if="!isMediaLoaded(msg.id)" class="flex h-44 w-[230px] max-w-full items-center justify-center bg-slate-950/70 text-[11px] font-bold text-slate-400">
+                    <div v-if="!isMediaLoaded(msg.id)" class="flex h-36 w-[180px] max-w-full items-center justify-center bg-slate-950/70 text-[11px] font-bold text-slate-400 md:h-44 md:w-[230px]">
                       <span class="mr-2 h-3 w-3 rounded-full border-2 border-slate-500/40 border-t-indigo-400 animate-spin" />
                       Đang tải ảnh...
                     </div>
                     <img
                       :src="msg.image"
                       alt="Hình ảnh"
-                      class="max-w-[230px] w-full object-cover transition-opacity duration-150"
+                      class="max-w-[180px] md:max-w-[230px] w-full object-cover transition-opacity duration-150"
                       :class="isMediaLoaded(msg.id) ? 'opacity-100' : 'absolute inset-0 opacity-0'"
                       referrerpolicy="no-referrer"
                       @load="markMediaLoaded(msg.id)"
@@ -997,13 +997,13 @@ onUnmounted(() => {
 
                   <!-- Video -->
                   <div v-else-if="msg.kind === 'video' && msg.image" class="relative overflow-hidden rounded-2xl border border-slate-700/50 bg-slate-950">
-                    <div v-if="!isMediaLoaded(msg.id)" class="flex h-40 w-[260px] max-w-full items-center justify-center bg-slate-950 text-[11px] font-bold text-slate-400">
+                    <div v-if="!isMediaLoaded(msg.id)" class="flex h-36 w-[220px] max-w-full items-center justify-center bg-slate-950 text-[11px] font-bold text-slate-400 md:h-40 md:w-[260px]">
                       <span class="mr-2 h-3 w-3 rounded-full border-2 border-slate-500/40 border-t-indigo-400 animate-spin" />
                       Đang tải video...
                     </div>
                     <video
                       :src="msg.image"
-                      class="block max-h-64 w-[260px] max-w-full bg-black object-contain transition-opacity duration-150"
+                      class="block max-h-64 w-full max-w-[220px] md:max-w-[260px] bg-black object-contain transition-opacity duration-150"
                       :class="isMediaLoaded(msg.id) ? 'opacity-100' : 'absolute inset-0 opacity-0'"
                       controls
                       playsinline
@@ -1017,14 +1017,14 @@ onUnmounted(() => {
                   <!-- Audio -->
                   <div
                     v-else-if="msg.kind === 'audio' && msg.image"
-                    class="min-w-56 rounded-2xl border border-slate-700/50 px-3 py-2.5"
+                    class="min-w-44 md:min-w-56 rounded-2xl border border-slate-700/50 px-3 py-2.5"
                     :class="msg.sender === 'me' ? 'bg-indigo-600/90' : 'bg-slate-800'"
                   >
                     <div class="mb-2 flex items-center gap-2 text-xs font-bold" :class="msg.sender === 'me' ? 'text-white' : 'text-slate-200'">
                       <Mic class="h-4 w-4" />
                       <span>Âm thanh</span>
                     </div>
-                    <audio :src="msg.image" class="h-9 w-56 max-w-full" controls preload="metadata" @loadedmetadata="markMediaLoaded(msg.id)" />
+                    <audio :src="msg.image" class="h-9 w-44 md:w-56 max-w-full" controls preload="metadata" @loadedmetadata="markMediaLoaded(msg.id)" />
                     <p class="mt-1 text-right text-[9px] opacity-60">{{ timeLabel(msg.createdAt) }}</p>
                   </div>
 

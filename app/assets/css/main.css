@@ -152,6 +152,8 @@
     radial-gradient(circle at top right, var(--app-glow-2), transparent 34rem),
     var(--app-bg);
   color: var(--app-text);
+  /* Ngăn nội dung tràn ngang trên mobile */
+  overflow-x: hidden;
 }
 
 .app-shell .animate-blob-1 {
